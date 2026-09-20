@@ -20,7 +20,7 @@ fn run() -> Result<(), AppError> {
             Ok(())
         }
         CliResult::Version => {
-            println!("mex {}", env!("CARGO_PKG_VERSION"));
+            println!("{}", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
         CliResult::Args(args) => {

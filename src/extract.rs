@@ -2,13 +2,19 @@ use crate::model::Output;
 use nom_exif::{MediaParser, MediaSource};
 use std::collections::BTreeMap;
 use std::fs::File;
+use std::path::Path;
 
-pub fn extract<'a>(
-    path: &'a str,
-    parser: &mut MediaParser,
-) -> Result<Output<'a>, Box<dyn std::error::Error>> {
+pub fn extract(path: &str, parser: &mut MediaParser) -> Result<Output, Box<dyn std::error::Error>> {
+    // Resolve to an absolute path so `File:` always shows the full location,
+    // regardless of how the user typed the argument.  `std::path::absolute`
+    // (stable since 1.79) does NOT prepend the `\\?\` UNC prefix on Windows
+    // and does NOT require the path to already exist.
+    let absolute =
+        std::path::absolute(Path::new(path)).unwrap_or_else(|_| Path::new(path).to_path_buf());
+    let file_str = absolute.display().to_string();
+
     let mut out = Output {
-        file: path,
+        file: file_str,
         directories: BTreeMap::new(),
     };
 

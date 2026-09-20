@@ -112,7 +112,8 @@ fn test_help_version() {
         .arg("-v")
         .assert()
         .success()
-        .stdout(predicate::str::contains("mex "));
+        // -v prints only the semver, e.g. "0.1.0\n"
+        .stdout(predicate::str::is_match(r"^\d+\.\d+\.\d+\n$").unwrap());
 }
 
 #[test]
