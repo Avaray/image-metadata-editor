@@ -1,0 +1,15 @@
+[package]
+name = "mex"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+lexopt = "0.3.2"
+nom-exif = "3"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+
+[dev-dependencies]
+assert_cmd = "2.2.2"
+predicates = "3.1.4"
+tempfile = "3.27.0"
