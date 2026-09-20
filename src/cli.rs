@@ -4,6 +4,7 @@ pub struct Args {
     pub file: String,
     pub json: bool,
     pub output: Option<String>,
+    pub strip: bool,
 }
 
 pub enum CliResult {
@@ -17,9 +18,13 @@ pub fn parse_args() -> Result<CliResult, lexopt::Error> {
     let mut file = None;
     let mut json = false;
     let mut output = None;
+    let mut strip = false;
 
     while let Some(arg) = parser.next()? {
         match arg {
+            Arg::Short('s') | Arg::Long("strip") => {
+                strip = true;
+            }
             Arg::Short('j') | Arg::Long("json") => {
                 json = true;
             }
@@ -44,6 +49,7 @@ pub fn parse_args() -> Result<CliResult, lexopt::Error> {
             file: f,
             json,
             output,
+            strip,
         })),
         None => Err(lexopt::Error::MissingValue {
             option: Some("file".to_string()),

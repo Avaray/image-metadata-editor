@@ -59,3 +59,14 @@ File: sample.jpg
   }
 }
 ```
+
+# Strip Metadata
+
+``bash
+# Strip metadata (e.g. EXIF) from JPEG and PNG files (in-place)
+mex <file> -s
+mex <file> --strip
+
+# Strip metadata and write to a new file
+mex <file> -s -o clean.jpg
+``

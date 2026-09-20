@@ -143,3 +143,25 @@ fn test_truncated_fixtures() {
         }
     }
 }
+
+#[test]
+fn test_strip() {
+    let fixtures = get_fixtures();
+    if fixtures.is_empty() { return; }
+
+    for path in fixtures {
+        let ext = path.extension().unwrap_or_default().to_string_lossy().to_lowercase();
+        if ext != "jpg" && ext != "jpeg" && ext != "png" { continue; }
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let test_file = temp_dir.path().join(path.file_name().unwrap());
+        std::fs::copy(&path, &test_file).unwrap();
+
+        // run strip inplace
+        Command::cargo_bin("mex").unwrap().arg(&test_file).arg("-s").assert().success();
+
+        // read back
+        Command::cargo_bin("mex").unwrap().arg(&test_file).assert().success().stdout(predicate::str::contains("No metadata found"));
+    }
+}
+
