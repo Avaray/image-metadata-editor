@@ -9,7 +9,7 @@ pub fn strip_metadata(path: &str, out_path: Option<&str>) -> Result<(), String> 
     };
 
     let mut inp = File::open(path).map_err(|e| e.to_string())?;
-    
+
     // Read signature to identify format
     let mut sig = [0u8; 8];
     let n = inp.read(&mut sig).map_err(|e| e.to_string())?;
@@ -40,7 +40,8 @@ pub fn strip_metadata(path: &str, out_path: Option<&str>) -> Result<(), String> 
 
     // If inplace (no output path), rename temp file to original
     if out_path.is_none() {
-        std::fs::rename(&out_path_str, path).map_err(|e| format!("Failed to overwrite original file: {}", e))?;
+        std::fs::rename(&out_path_str, path)
+            .map_err(|e| format!("Failed to overwrite original file: {}", e))?;
     }
 
     Ok(())
@@ -62,7 +63,7 @@ fn strip_jpeg(inp: &mut File, out: &mut BufWriter<File>, sig: &[u8]) -> Result<(
             out.write_all(&byte).map_err(|e| e.to_string())?;
             continue;
         }
-        
+
         let mut marker = [0u8; 1];
         if inp.read(&mut marker).map_err(|e| e.to_string())? == 0 {
             out.write_all(&[0xFF]).map_err(|e| e.to_string())?;
@@ -76,7 +77,8 @@ fn strip_jpeg(inp: &mut File, out: &mut BufWriter<File>, sig: &[u8]) -> Result<(
         }
 
         if marker[0] == 0x00 || marker[0] == 0x01 || (marker[0] >= 0xD0 && marker[0] <= 0xD9) {
-            out.write_all(&[0xFF, marker[0]]).map_err(|e| e.to_string())?;
+            out.write_all(&[0xFF, marker[0]])
+                .map_err(|e| e.to_string())?;
             if marker[0] == 0xD9 {
                 break; // EOI
             }
@@ -85,20 +87,24 @@ fn strip_jpeg(inp: &mut File, out: &mut BufWriter<File>, sig: &[u8]) -> Result<(
 
         let mut len_buf = [0u8; 2];
         if inp.read_exact(&mut len_buf).is_err() {
-            out.write_all(&[0xFF, marker[0]]).map_err(|e| e.to_string())?;
+            out.write_all(&[0xFF, marker[0]])
+                .map_err(|e| e.to_string())?;
             break;
         }
         let length = u16::from_be_bytes(len_buf) as usize;
 
         // Strip COM (0xFE) and APP1-APP15 (0xE1-0xEF), keeping APP2 (0xE2) and APP14 (0xEE)
-        let strip = marker[0] == 0xFE || (marker[0] >= 0xE1 && marker[0] <= 0xEF && marker[0] != 0xE2 && marker[0] != 0xEE);
+        let strip = marker[0] == 0xFE
+            || (marker[0] >= 0xE1 && marker[0] <= 0xEF && marker[0] != 0xE2 && marker[0] != 0xEE);
 
         if strip {
             if length >= 2 {
-                inp.seek(SeekFrom::Current((length - 2) as i64)).map_err(|e| e.to_string())?;
+                inp.seek(SeekFrom::Current((length - 2) as i64))
+                    .map_err(|e| e.to_string())?;
             }
         } else {
-            out.write_all(&[0xFF, marker[0], len_buf[0], len_buf[1]]).map_err(|e| e.to_string())?;
+            out.write_all(&[0xFF, marker[0], len_buf[0], len_buf[1]])
+                .map_err(|e| e.to_string())?;
             if length >= 2 {
                 let mut data = vec![0; length - 2];
                 inp.read_exact(&mut data).map_err(|e| e.to_string())?;
@@ -106,56 +112,56 @@ fn strip_jpeg(inp: &mut File, out: &mut BufWriter<File>, sig: &[u8]) -> Result<(
             }
         }
 
-        if marker[0] == 0xDA { // SOS - Start of Scan
+        if marker[0] == 0xDA {
+            // SOS - Start of Scan
             io::copy(inp, out).map_err(|e| e.to_string())?;
             break;
         }
     }
-    
+
     Ok(())
 }
 
 fn strip_png(inp: &mut File, out: &mut BufWriter<File>, sig: &[u8]) -> Result<(), String> {
     out.write_all(sig).map_err(|e| e.to_string())?;
     // We read 8 bytes, which is the entire PNG signature. We are correctly at offset 8.
-    
+
     loop {
         let mut len_buf = [0u8; 4];
         if inp.read_exact(&mut len_buf).is_err() {
             break;
         }
         let length = u32::from_be_bytes(len_buf) as usize;
-        
+
         let mut type_buf = [0u8; 4];
         inp.read_exact(&mut type_buf).map_err(|e| e.to_string())?;
-        
-        let strip = match &type_buf {
-            b"eXIf" | b"tEXt" | b"zTXt" | b"iTXt" | b"tIME" => true,
-            _ => false,
-        };
-        
+
+        let strip = matches!(&type_buf, b"eXIf" | b"tEXt" | b"zTXt" | b"iTXt" | b"tIME");
+
         if strip {
             // Skip data (length) + CRC (4)
-            inp.seek(SeekFrom::Current((length + 4) as i64)).map_err(|e| e.to_string())?;
+            inp.seek(SeekFrom::Current((length + 4) as i64))
+                .map_err(|e| e.to_string())?;
         } else {
             out.write_all(&len_buf).map_err(|e| e.to_string())?;
             out.write_all(&type_buf).map_err(|e| e.to_string())?;
-            
+
             // Read data and CRC without allocating massive memory chunks
             let mut remaining = length + 4;
             let mut buf = [0u8; 8192];
             while remaining > 0 {
                 let to_read = std::cmp::min(remaining, buf.len());
-                inp.read_exact(&mut buf[..to_read]).map_err(|e| e.to_string())?;
+                inp.read_exact(&mut buf[..to_read])
+                    .map_err(|e| e.to_string())?;
                 out.write_all(&buf[..to_read]).map_err(|e| e.to_string())?;
                 remaining -= to_read;
             }
         }
-        
+
         if &type_buf == b"IEND" {
             break;
         }
     }
-    
+
     Ok(())
 }

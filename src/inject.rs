@@ -1,0 +1,195 @@
+use crc::{CRC_32_ISO_HDLC, Crc};
+use little_exif::exif_tag::ExifTag;
+use little_exif::metadata::Metadata;
+use std::collections::BTreeMap;
+use std::fs::File;
+use std::io::{BufWriter, Read, Write};
+
+const CRC32: Crc<u32> = Crc::<u32>::new(&CRC_32_ISO_HDLC);
+
+pub fn inject_metadata(
+    path: &str,
+    out_path: Option<&str>,
+    tags: &BTreeMap<String, String>,
+) -> Result<(), String> {
+    let out_path_str = match out_path {
+        Some(p) => p.to_string(),
+        None => format!("{}.tmp", path),
+    };
+
+    // Copy original to out_path_str so we can modify it
+    std::fs::copy(path, &out_path_str).map_err(|e| format!("Failed to copy file: {}", e))?;
+
+    // Identify format by sniffing magic bytes
+    let mut sig = [0u8; 8];
+    {
+        let mut f = File::open(path).map_err(|e| e.to_string())?;
+        let n = f.read(&mut sig).map_err(|e| e.to_string())?;
+        if n < 8 {
+            return Err("File too small".into());
+        }
+    }
+
+    let is_jpeg = sig[0..2] == [0xFF, 0xD8];
+    let is_png = sig == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+
+    if !is_jpeg && !is_png {
+        std::fs::remove_file(&out_path_str).ok();
+        return Err("Injecting metadata is currently unsupported for this format (only JPEG and PNG are supported).".into());
+    }
+
+    // Split tags into known EXIF and unknown
+    let mut unknown = BTreeMap::new();
+    let mut known_exif_tags: Vec<ExifTag> = Vec::new();
+
+    for (k, v) in tags {
+        match parse_known_exif_tag(k, v) {
+            Some(tag) => known_exif_tags.push(tag),
+            None => {
+                unknown.insert(k.clone(), v.clone());
+            }
+        }
+    }
+
+    // For JPEG: pack unknown tags into UserComment as JSON
+    if is_jpeg
+        && !unknown.is_empty()
+        && let Ok(json) = serde_json::to_string(&unknown)
+    {
+        known_exif_tags.push(ExifTag::UserComment(json.into_bytes()));
+    }
+
+    // Write EXIF (known + unknown-packed): read existing, merge, write back
+    if !known_exif_tags.is_empty() {
+        // Read existing metadata so we don't lose it
+        let out_p = std::path::Path::new(&out_path_str);
+        let mut exif = Metadata::new_from_path(out_p).unwrap_or_else(|_| Metadata::new());
+
+        // Merge new tags on top (set_tag replaces if already present)
+        for tag in known_exif_tags {
+            exif.set_tag(tag);
+        }
+
+        exif.write_to_file(out_p).map_err(|e| {
+            std::fs::remove_file(&out_path_str).ok();
+            format!("Failed to write EXIF: {:?}", e)
+        })?;
+    }
+
+    // If PNG and we have unknown tags, inject tEXt chunks
+    if is_png && !unknown.is_empty() {
+        let temp_png = format!("{}.png.tmp", out_path_str);
+        match inject_png_text(&out_path_str, &temp_png, &unknown) {
+            Ok(_) => {
+                std::fs::rename(&temp_png, &out_path_str)
+                    .map_err(|e| format!("Failed to swap png temp file: {}", e))?;
+            }
+            Err(e) => {
+                std::fs::remove_file(&temp_png).ok();
+                std::fs::remove_file(&out_path_str).ok();
+                return Err(e);
+            }
+        }
+    }
+
+    // Finalize: if in-place, rename temp over original
+    if out_path.is_none() {
+        std::fs::rename(&out_path_str, path)
+            .map_err(|e| format!("Failed to overwrite original file: {}", e))?;
+    }
+
+    Ok(())
+}
+
+fn parse_known_exif_tag(key: &str, value: &str) -> Option<ExifTag> {
+    let v = value.to_string();
+    match key {
+        "ImageDescription" => Some(ExifTag::ImageDescription(v)),
+        "Make" => Some(ExifTag::Make(v)),
+        "Model" => Some(ExifTag::Model(v)),
+        "Software" => Some(ExifTag::Software(v)),
+        "Artist" => Some(ExifTag::Artist(v)),
+        "Copyright" => Some(ExifTag::Copyright(v)),
+        "DateTimeOriginal" => Some(ExifTag::DateTimeOriginal(v)),
+        "UserComment" => Some(ExifTag::UserComment(v.into_bytes())),
+        _ => None,
+    }
+}
+
+fn inject_png_text(
+    in_path: &str,
+    out_path: &str,
+    tags: &BTreeMap<String, String>,
+) -> Result<(), String> {
+    let mut inp = File::open(in_path).map_err(|e| e.to_string())?;
+    let mut out = BufWriter::new(File::create(out_path).map_err(|e| e.to_string())?);
+
+    // Copy PNG signature
+    let mut sig = [0u8; 8];
+    inp.read_exact(&mut sig).map_err(|e| e.to_string())?;
+    out.write_all(&sig).map_err(|e| e.to_string())?;
+
+    let mut injected = false;
+
+    loop {
+        let mut len_buf = [0u8; 4];
+        if inp.read_exact(&mut len_buf).is_err() {
+            break;
+        }
+        let length = u32::from_be_bytes(len_buf) as usize;
+
+        let mut type_buf = [0u8; 4];
+        inp.read_exact(&mut type_buf).map_err(|e| e.to_string())?;
+
+        // Inject our tEXt chunks right after IHDR (i.e., before the first non-IHDR chunk)
+        if !injected && &type_buf != b"IHDR" {
+            for (k, v) in tags {
+                let k_trunc = if k.len() > 79 { &k[..79] } else { k };
+                write_text_chunk(&mut out, k_trunc, v).map_err(|e| e.to_string())?;
+            }
+            injected = true;
+        }
+
+        out.write_all(&len_buf).map_err(|e| e.to_string())?;
+        out.write_all(&type_buf).map_err(|e| e.to_string())?;
+
+        // Copy chunk data + CRC
+        let mut remaining = length + 4;
+        let mut buf = [0u8; 8192];
+        while remaining > 0 {
+            let to_read = std::cmp::min(remaining, buf.len());
+            inp.read_exact(&mut buf[..to_read])
+                .map_err(|e| e.to_string())?;
+            out.write_all(&buf[..to_read]).map_err(|e| e.to_string())?;
+            remaining -= to_read;
+        }
+
+        if &type_buf == b"IEND" {
+            break;
+        }
+    }
+
+    Ok(())
+}
+
+fn write_text_chunk(out: &mut impl Write, key: &str, value: &str) -> std::io::Result<()> {
+    // tEXt data: key bytes + 0x00 separator + value bytes
+    let mut data = Vec::new();
+    data.extend_from_slice(key.as_bytes());
+    data.push(0);
+    data.extend_from_slice(value.as_bytes());
+
+    let length = data.len() as u32;
+    out.write_all(&length.to_be_bytes())?;
+
+    // CRC covers chunk type + chunk data
+    let mut crc_input = Vec::with_capacity(4 + data.len());
+    crc_input.extend_from_slice(b"tEXt");
+    crc_input.extend_from_slice(&data);
+
+    out.write_all(b"tEXt")?;
+    out.write_all(&data)?;
+    out.write_all(&CRC32.checksum(&crc_input).to_be_bytes())?;
+
+    Ok(())
+}

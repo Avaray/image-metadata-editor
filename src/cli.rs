@@ -5,6 +5,7 @@ pub struct Args {
     pub json: bool,
     pub output: Option<String>,
     pub strip: bool,
+    pub set: std::collections::BTreeMap<String, String>,
 }
 
 pub enum CliResult {
@@ -19,11 +20,22 @@ pub fn parse_args() -> Result<CliResult, lexopt::Error> {
     let mut json = false;
     let mut output = None;
     let mut strip = false;
+    let mut set = std::collections::BTreeMap::new();
 
     while let Some(arg) = parser.next()? {
         match arg {
             Arg::Short('s') | Arg::Long("strip") => {
                 strip = true;
+            }
+            Arg::Long("set") => {
+                let val = parser.value()?.to_string_lossy().into_owned();
+                if let Some((k, v)) = val.split_once('=') {
+                    set.insert(k.to_string(), v.to_string());
+                } else {
+                    return Err(lexopt::Error::Custom(
+                        "Invalid --set format, expected Key=Value".into(),
+                    ));
+                }
             }
             Arg::Short('j') | Arg::Long("json") => {
                 json = true;
@@ -50,6 +62,7 @@ pub fn parse_args() -> Result<CliResult, lexopt::Error> {
             json,
             output,
             strip,
+            set,
         })),
         None => Err(lexopt::Error::MissingValue {
             option: Some("file".to_string()),

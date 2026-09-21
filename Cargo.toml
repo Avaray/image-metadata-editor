@@ -4,7 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+crc = "3.4.0"
 lexopt = "0.3.2"
+little_exif = "0.6.23"
 nom-exif = { version = "3", default-features = false }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
@@ -20,4 +22,9 @@ lto = "fat"
 codegen-units = 1
 strip = true
 panic = "abort"
+
+
+[[bin]]
+name = "scratch"
+path = "scratch.rs"
 

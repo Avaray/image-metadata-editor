@@ -1,6 +1,7 @@
 mod cli;
 mod error;
 mod extract;
+mod inject;
 mod model;
 mod output;
 mod strip;
@@ -12,11 +13,18 @@ use std::process;
 fn run() -> Result<(), AppError> {
     match cli::parse_args().map_err(|e| AppError::Usage(e.to_string()))? {
         CliResult::Help => {
-            println!("Usage: mex <file> [-j|--json] [-o|--output <path>] [-s|--strip]");
+            println!(
+                "Usage: mex <file> [-j|--json] [-o|--output <path>] [-s|--strip] [--set Key=Value]"
+            );
             println!("Options:");
             println!("  -j, --json          print metadata as JSON");
             println!("  -o, --output <path> write the result to <path> instead of stdout");
-            println!("  -s, --strip         strip metadata from the file (currently JPEG/PNG only)");
+            println!(
+                "  -s, --strip         strip metadata from the file (currently JPEG/PNG only)"
+            );
+            println!(
+                "      --set K=V       set metadata Key to Value (can be used multiple times)"
+            );
             println!("  -v, --version       print version information");
             println!("  -h, --help          print this help message");
             Ok(())
@@ -28,6 +36,11 @@ fn run() -> Result<(), AppError> {
         CliResult::Args(args) => {
             if args.strip {
                 strip::strip_metadata(&args.file, args.output.as_deref())
+                    .map_err(|e| AppError::Runtime(e.to_string()))?;
+                return Ok(());
+            }
+            if !args.set.is_empty() {
+                inject::inject_metadata(&args.file, args.output.as_deref(), &args.set)
                     .map_err(|e| AppError::Runtime(e.to_string()))?;
                 return Ok(());
             }
