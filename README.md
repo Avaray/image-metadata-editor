@@ -1,11 +1,21 @@
 # mex
 
-**mex** (Metadata EXtractor) is a fast, lightweight, and portable CLI that reads **and writes** metadata from image, video, and audio files.
+**mex** (Metadata EXtractor) is a blazingly fast, lightweight, and portable CLI written in **Rust** that reads and writes metadata from image files.
+
+It was primarily designed to handle, strip, and inject metadata into AI-generated images (e.g., from **ComfyUI**, **ForgeUI**, or Stable Diffusion), making it easy to extract or manipulate custom generation prompts and workflow parameters.
 
 - Zero runtime dependencies — single statically linked binary
-- Reads only the bytes that hold metadata; run time does not depend on file size
+- Blazingly fast: reads only the bytes that hold metadata; run time does not depend on file size
 - Outputs readable text or JSON
 - Can strip all metadata or inject custom key/value pairs (JPEG & PNG)
+
+---
+
+## Scope & Limitations
+
+- **Primary Target:** Modification features (`--strip`, `--set`) strictly target **JPEG** and **PNG** files, as these are the standard for AI image generation.
+- **Read-Only Video/Audio:** While `mex` can extract and read metadata from various other formats (like MP4, MOV, WebP, TIFF), this is strictly a **read-only** feature. Support for modifying video, audio, or other exotic image formats is minimal and is **not planned** for future expansion.
+- **Custom Tags:** Full custom tag injection (e.g., `prompt`, `workflow`) is natively supported via `tEXt` chunks in PNG. For JPEG, custom tags are packed into the standard `UserComment` EXIF field.
 
 ---
 
