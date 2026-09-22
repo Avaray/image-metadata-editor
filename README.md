@@ -102,11 +102,6 @@ ime photo.jpg -s              # in-place
 ime photo.jpg -s -o clean.jpg # write to a new file
 ```
 
-> [!NOTE]
-> For video and audio formats `--strip` returns an error. Metadata reading still works for all supported formats.
-
----
-
 ## Injecting metadata (`--set`)
 
 Sets one or more metadata tags. Existing tags that are not mentioned are preserved.  
@@ -128,23 +123,6 @@ ime photo.jpg --set "Software=ime" -o tagged.jpg
 ime image.png --set "prompt=a cat sitting on a roof" --set "negative_prompt=blurry"
 ```
 
-### Supported standard EXIF keys
-
-| Key | EXIF meaning |
-|-----|-------------|
-| `ImageDescription` | Caption / description |
-| `Make` | Camera manufacturer |
-| `Model` | Camera model |
-| `Software` | Software used |
-| `Artist` | Author / creator |
-| `Copyright` | Copyright notice |
-| `DateTimeOriginal` | Original capture date (`YYYY:MM:DD HH:MM:SS`) |
-| `UserComment` | Free-form comment (raw bytes) |
-
-Any key not listed above is treated as a **custom tag**.
-
----
-
 ## Supported formats
 
 | Category | Formats | Read | Write |
@@ -152,8 +130,6 @@ Any key not listed above is treated as a **custom tag**.
 | Image | JPEG, PNG | ✅ | ✅ |
 | Image | WebP, HEIC/HEIF, AVIF, TIFF, CR3, RAF, IIQ | ✅ | ❌ |
 | Video | MP4, MOV, 3GP, MKV, WebM | ✅ | ❌ |
-
----
 
 ## Exit codes
 
