@@ -286,6 +286,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "ime"
+version = "0.1.0"
+dependencies = [
+ "assert_cmd",
+ "crc",
+ "lexopt",
+ "little_exif",
+ "nom-exif",
+ "predicates",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "iso6709parse"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -361,21 +376,6 @@ name = "memchr"
 version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
-
-[[package]]
-name = "mex"
-version = "0.1.0"
-dependencies = [
- "assert_cmd",
- "crc",
- "lexopt",
- "little_exif",
- "nom-exif",
- "predicates",
- "serde",
- "serde_json",
- "tempfile",
-]
 
 [[package]]
 name = "minimal-lexical"

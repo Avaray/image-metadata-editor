@@ -2,6 +2,7 @@ use lexopt::{Arg, Parser};
 
 pub struct Args {
     pub file: String,
+    pub key: Option<String>,
     pub output: Option<String>,
     pub strip: bool,
     pub set: std::collections::BTreeMap<String, String>,
@@ -16,6 +17,7 @@ pub enum CliResult {
 pub fn parse_args() -> Result<CliResult, lexopt::Error> {
     let mut parser = Parser::from_env();
     let mut file = None;
+    let mut key = None;
     let mut output = None;
     let mut strip = false;
     let mut set = std::collections::BTreeMap::new();
@@ -34,6 +36,11 @@ pub fn parse_args() -> Result<CliResult, lexopt::Error> {
                         "Invalid --set format, expected Key=Value".into(),
                     ));
                 }
+            }
+            Arg::Short('k') | Arg::Long("key") => {
+                let raw = parser.value()?.to_string_lossy().into_owned();
+                // Accept both ".Exif.Model" and "Exif.Model"
+                key = Some(raw.trim_start_matches('.').to_string());
             }
             Arg::Short('o') | Arg::Long("output") => {
                 output = Some(parser.value()?.to_string_lossy().into_owned());
@@ -54,6 +61,7 @@ pub fn parse_args() -> Result<CliResult, lexopt::Error> {
     match file {
         Some(f) => Ok(CliResult::Args(Args {
             file: f,
+            key,
             output,
             strip,
             set,

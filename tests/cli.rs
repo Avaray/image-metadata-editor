@@ -26,7 +26,7 @@ fn test_cli_on_fixtures() {
 
     for path in fixtures {
         // Output is always JSON now
-        let assert = Command::cargo_bin("mex")
+        let assert = Command::cargo_bin("ime")
             .unwrap()
             .arg(&path)
             .assert()
@@ -39,7 +39,7 @@ fn test_cli_on_fixtures() {
         // Output file
         let temp_dir = tempfile::tempdir().unwrap();
         let out_file = temp_dir.path().join("out.json");
-        Command::cargo_bin("mex")
+        Command::cargo_bin("ime")
             .unwrap()
             .arg(&path)
             .arg("-o")
@@ -56,7 +56,7 @@ fn test_cli_on_fixtures() {
 
 #[test]
 fn test_missing_file() {
-    Command::cargo_bin("mex")
+    Command::cargo_bin("ime")
         .unwrap()
         .arg("does_not_exist.jpg")
         .assert()
@@ -71,7 +71,7 @@ fn test_unsupported_file() {
     let unsupported = temp_dir.path().join("unsupported.txt");
     fs::write(&unsupported, b"not an image or video").unwrap();
 
-    Command::cargo_bin("mex")
+    Command::cargo_bin("ime")
         .unwrap()
         .arg(&unsupported)
         .assert()
@@ -81,7 +81,7 @@ fn test_unsupported_file() {
 
 #[test]
 fn test_no_arguments() {
-    Command::cargo_bin("mex")
+    Command::cargo_bin("ime")
         .unwrap()
         .assert()
         .failure()
@@ -91,13 +91,13 @@ fn test_no_arguments() {
 
 #[test]
 fn test_help_version() {
-    Command::cargo_bin("mex")
+    Command::cargo_bin("ime")
         .unwrap()
         .arg("-h")
         .assert()
         .success()
         .stdout(predicate::str::contains("Usage:"));
-    Command::cargo_bin("mex")
+    Command::cargo_bin("ime")
         .unwrap()
         .arg("-v")
         .assert()
@@ -123,7 +123,7 @@ fn test_truncated_fixtures() {
             let trunc_path = temp_dir.path().join(format!("trunc_{}.bin", i));
             std::fs::write(&trunc_path, &content[..size]).unwrap();
 
-            let assert = Command::cargo_bin("mex").unwrap().arg(&trunc_path).assert();
+            let assert = Command::cargo_bin("ime").unwrap().arg(&trunc_path).assert();
             let code = assert.get_output().status.code().unwrap_or(1);
             assert!(
                 code == 0 || code == 1,
@@ -156,7 +156,7 @@ fn test_strip() {
         std::fs::copy(&path, &test_file).unwrap();
 
         // run strip inplace
-        Command::cargo_bin("mex")
+        Command::cargo_bin("ime")
             .unwrap()
             .arg(&test_file)
             .arg("-s")
@@ -164,7 +164,7 @@ fn test_strip() {
             .success();
 
         // read back
-        Command::cargo_bin("mex")
+        Command::cargo_bin("ime")
             .unwrap()
             .arg(&test_file)
             .assert()

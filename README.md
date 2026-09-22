@@ -1,28 +1,44 @@
-# ⚡️ mex
+# ime
 
-**mex** (**M**etadata **EX**tractor) is a fast, lightweight, and portable CLI written in **Rust** that reads and writes metadata from image files.
+**ime** (Metadata EXtractor) is a blazingly fast, lightweight, and portable CLI written in **Rust** that reads and writes metadata from image files.
+
+It was primarily designed to handle, strip, and inject metadata in AI-generated images (e.g., from **ComfyUI**, **ForgeUI**, Stable Diffusion), making it easy to extract or manipulate generation prompts and workflow parameters embedded by those tools.
+
+---
 
 ## Scope & Limitations
 
-- **Primary Target:** Modification features (`--strip`, `--set`) strictly target **JPEG** and **PNG**.
-- **Read-Only Video/Audio:** While `mex` can read metadata from various other formats (like MP4, MOV, WebP, TIFF), this is strictly a **read-only** feature. Support for modifying video, audio, or other exotic image formats is **not planned**..
-- **Custom Tags:** Full custom tag injection (e.g., `prompt`, `workflow`) is natively supported via `tEXt` chunks in PNG. For JPEG, custom tags are packed into the standard `UserComment` EXIF field as JSON.
+- **Primary target:** Modification features (`--strip`, `--set`) support **JPEG** and **PNG** only.
+- **Read-only video/audio:** `ime` can _read_ metadata from various container formats (MP4, MOV, WebP, TIFF…), but modifying them is **not planned**.
+- **Custom tags:** Unknown keys are written as native `tEXt` chunks in PNG (readable by Stable Diffusion viewers) or packed into `UserComment` as JSON in JPEG.
+
+---
 
 ## Installation
 
-Download latest [TODO: write instructions]
+Build from source:
+
+```bash
+cargo build --release
+# Binary: target/release/ime (Linux) or target/release/ime.exe (Windows)
+```
+
+Or download a pre-built binary from the [Releases](../../releases) page.
+
+---
 
 ## Usage
 
-```bash
-mex /path/to/image.png
+```
+ime <file> [OPTIONS]
 ```
 
 | Flag | Short | Description |
 |------|-------|-------------|
 | `--output <path>` | `-o` | Write result (or modified file) to `<path>` instead of stdout / in-place |
 | `--strip` | `-s` | Remove all metadata from the file (JPEG & PNG only) |
-| `--set Key=Value` | | Inject a metadata tag (repeatable, JPEG & PNG only) |
+| `--set Key=Value` | | Inject a metadata tag; repeatable (JPEG & PNG only) |
+| `--key <path>` | `-k` | Extract a single value using a dot-notation path |
 | `--version` | `-v` | Print the semver version number and exit |
 | `--help` | `-h` | Print help and exit |
 
@@ -30,14 +46,14 @@ mex /path/to/image.png
 
 ## Reading metadata
 
-Outputs extracted metadata as a JSON object.
+Outputs all extracted metadata as a flat JSON object (one key per metadata directory).
 
 ```bash
-# Print metadata to stdout
-mex photo.jpg
+# Print all metadata to stdout
+ime photo.jpg
 
-# Save output to a file
-mex photo.jpg -o meta.json
+# Save to a file
+ime photo.jpg -o meta.json
 ```
 
 ### Output example
@@ -52,50 +68,85 @@ mex photo.jpg -o meta.json
   "Tiff": {
     "Make": "SONY",
     "Model": "DSC-RX100M5A"
+  },
+  "PngText": {
+    "parameters": "beautiful landscape ...",
+    "workflow": "{\"nodes\": [...]}"
   }
 }
 ```
 
 ---
 
-## Stripping metadata
+## Extracting a single value (`-k` / `--key`)
 
-Removes all EXIF / metadata from the file. Operates in-place by default; use `-o` to write to a new file instead (leaving the original untouched).
+Use dot-notation (same style as `jq`) to extract a single tag from the metadata.
+
+- Leading `.` is optional — both `.Tiff.Make` and `Tiff.Make` work.
+- Array indices are supported: `nodes[0].type`.
+- **Smart JSON traversal:** if a tag value is itself a JSON string (common in ComfyUI `workflow` or `prompt` keys), `ime` automatically parses it and continues traversal.
+
+```bash
+# Extract a scalar value (printed as raw text, no quotes)
+ime photo.jpg -k Tiff.Make
+# Nokia
+
+# Same with leading dot
+ime photo.jpg -k .Tiff.Model
+# N73
+
+# Extract the raw generation parameters from a ForgeUI/A1111 PNG
+ime image.png -k PngText.parameters
+
+# Enter a ComfyUI workflow JSON embedded inside a tEXt chunk
+ime image.png -k PngText.workflow.nodes[0].class_type
+
+# Missing key → exit code 1
+ime photo.jpg -k Exif.NonExistent
+# Error: Key 'Exif.NonExistent' not found in metadata
+```
+
+When the result is a plain string it is printed without surrounding quotes.  
+When the result is an object or array it is printed as pretty-printed JSON.
+
+---
+
+## Stripping metadata (`-s` / `--strip`)
+
+Removes all EXIF and embedded metadata from the file in-place.  
+Use `-o` to write to a new file instead (original is left untouched).
 
 Supported formats: **JPEG**, **PNG**.
 
 ```bash
-# In-place strip
-mex photo.jpg --strip
-mex photo.jpg -s
-
-# Write stripped copy to a new file
-mex photo.jpg -s -o photo_clean.jpg
+ime photo.jpg -s              # in-place
+ime photo.jpg -s -o clean.jpg # write to a new file
 ```
 
 > [!NOTE]
-> For video and audio formats, `--strip` returns an error. Extraction (`mex <file>`) still works for all supported formats.
+> For video and audio formats `--strip` returns an error. Metadata reading still works for all supported formats.
 
 ---
 
 ## Injecting metadata (`--set`)
 
-Sets one or more metadata tags. Can be used multiple times. Existing tags not mentioned in the command are preserved.
+Sets one or more metadata tags. Existing tags that are not mentioned are preserved.  
+Can be combined with `-o` to write to a new file.
 
 Supported formats: **JPEG**, **PNG**.
 
 ```bash
-# Set a standard EXIF tag
-mex photo.jpg --set "ImageDescription=Sunset at the lake"
+# Standard EXIF tag
+ime photo.jpg --set "ImageDescription=Sunset at the lake"
 
-# Set multiple tags at once
-mex photo.jpg --set "Artist=Jan Kowalski" --set "Copyright=2025 Jan Kowalski"
+# Multiple tags
+ime photo.jpg --set "Artist=Jan Kowalski" --set "Copyright=2025 Jan Kowalski"
 
-# Write to a new file instead of modifying in-place
-mex photo.jpg --set "Software=mex" -o photo_tagged.jpg
+# Write to a new file
+ime photo.jpg --set "Software=ime" -o tagged.jpg
 
-# Set a completely custom tag (non-EXIF key)
-mex photo.png --set "prompt=a cat sitting on a roof" --set "negative_prompt=blurry"
+# Custom key (PNG → tEXt chunk; JPEG → UserComment JSON)
+ime image.png --set "prompt=a cat sitting on a roof" --set "negative_prompt=blurry"
 ```
 
 ### Supported standard EXIF keys
@@ -111,22 +162,17 @@ mex photo.png --set "prompt=a cat sitting on a roof" --set "negative_prompt=blur
 | `DateTimeOriginal` | Original capture date (`YYYY:MM:DD HH:MM:SS`) |
 | `UserComment` | Free-form comment (raw bytes) |
 
-### Custom (non-EXIF) keys
-
-Any key not listed above is treated as a **custom tag**:
-
-- **PNG**: Written as a native `tEXt` chunk — readable by any PNG-aware tool (e.g. Stable Diffusion viewers read `prompt` this way).
-- **JPEG**: Packed as a JSON object into the `UserComment` EXIF field.
+Any key not listed above is treated as a **custom tag**.
 
 ---
 
-## Supported formats (read)
+## Supported formats
 
-| Category | Formats |
-|----------|---------|
-| Image | JPEG, PNG, WebP, HEIC/HEIF, AVIF, TIFF, CR3, RAF, IIQ |
-| Video | MP4, MOV, 3GP, MKV, WebM |
-| Audio | (via container metadata where applicable) |
+| Category | Formats | Read | Write |
+|----------|---------|------|-------|
+| Image | JPEG, PNG | ✅ | ✅ |
+| Image | WebP, HEIC/HEIF, AVIF, TIFF, CR3, RAF, IIQ | ✅ | ❌ |
+| Video | MP4, MOV, 3GP, MKV, WebM | ✅ | ❌ |
 
 ---
 
@@ -134,6 +180,6 @@ Any key not listed above is treated as a **custom tag**:
 
 | Code | Meaning |
 |------|---------|
-| `0` | Success (even if no metadata was found) |
-| `1` | Runtime error (I/O error, unsupported format, corrupt file) |
+| `0` | Success |
+| `1` | Runtime error (I/O error, unsupported format, key not found, corrupt file) |
 | `2` | Usage error (bad flags, missing file argument) |
