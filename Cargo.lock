@@ -295,7 +295,6 @@ dependencies = [
  "little_exif",
  "nom-exif",
  "predicates",
- "serde",
  "serde_json",
  "tempfile",
 ]
