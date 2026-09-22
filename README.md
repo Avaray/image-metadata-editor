@@ -1,6 +1,6 @@
-# 🧬 Image Metadata Editor
+# 🧬 Image Metadata Editor `ime`
 
-**ime** is a fast, lightweight, and portable CLI written in **Rust** that reads and writes metadata from image files.
+**ime** is a fast, lightweight, and portable [CLI](https://en.wikipedia.org/wiki/Command-line_interface) written in [Rust](https://rust-lang.org/) for **reading**, **writing**, and completely **wiping** metadata from image files.
 
 ## Installation
 
@@ -68,11 +68,11 @@ Use dot-notation (same style as `jq`) to extract a single tag from the metadata.
 ```bash
 # Extract a scalar value (printed as raw text, no quotes)
 ime photo.jpg -k Tiff.Make
-# Nokia
+# Kyocera Visual Phone 
 
 # Same with leading dot
 ime photo.jpg -k .Tiff.Model
-# N73
+# VP-210
 
 # Extract the raw generation parameters from a ForgeUI/A1111 PNG
 ime image.png -k PngText.parameters
@@ -121,6 +121,9 @@ ime photo.jpg --set "Software=ime" -o tagged.jpg
 
 # Custom key (PNG → tEXt chunk; JPEG → UserComment JSON)
 ime image.png --set "prompt=a cat sitting on a roof" --set "negative_prompt=blurry"
+
+# Inject multiple tags from a JSON object
+ime image.png --set-json '{"prompt":"a cat","steps":30,"cfg":7}'
 ```
 
 ## Supported formats
