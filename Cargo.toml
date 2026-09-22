@@ -1,15 +1,15 @@
 [package]
-name = "ime"
-version = "1.0.0"
-edition = "2024"
-rust-version = "1.85"
 authors = ["Dawid Wasowski <contact@dav.one>"]
-description = "A fast, lightweight CLI for reading, writing, and wiping metadata from image files."
-readme = "README.md"
-license = "CC-BY-NC-4.0"
 categories = ["command-line-utilities", "multimedia::images", "development-tools", "multimedia", "utilities"]
+description = "A fast, lightweight CLI for reading, writing, and wiping metadata from image files."
+edition = "2024"
 keywords = ["cli", "metadata", "exif", "image", "tool"]
+license = "CC-BY-NC-4.0"
+name = "ime"
 publish = false
+readme = "README.md"
+rust-version = "1.85"
+version = "1.0.0"
 
 [dependencies]
 crc = "3.4.0"
@@ -24,8 +24,8 @@ predicates = "3.1.4"
 tempfile = "3.27.0"
 
 [profile.release]
-opt-level = 3
-lto = "fat"
 codegen-units = 1
-strip = true
+lto = "fat"
+opt-level = 3
 panic = "abort"
+strip = true
