@@ -10,6 +10,11 @@ on:
         description: 'Version tag for manual release (e.g., v0.1.0-test)'
         required: true
         type: string
+      publish_to_crates_io:
+        description: 'Also publish to crates.io (leave unchecked for test/manual releases)'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -114,6 +119,10 @@ jobs:
     name: Publish to crates.io
     runs-on: ubuntu-latest
     needs: release # Only publish after successful build and GitHub release
+    # crates.io publishes are permanent and can't be un-published, so a manual
+    # (workflow_dispatch) run only publishes if the checkbox was explicitly ticked.
+    # Once the tag-push trigger above is re-enabled, tag pushes always publish.
+    if: github.event_name != 'workflow_dispatch' || github.event.inputs.publish_to_crates_io == 'true'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
