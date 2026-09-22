@@ -4,7 +4,17 @@
 
 ## Installation
 
-Download a pre-built binary from the [Releases](../../releases) page.
+### Using Cargo (Recommended for Rust users)
+
+If you have Rust installed, you can easily install the latest version directly from crates.io:
+
+```bash
+cargo install ime
+```
+
+### Pre-built binaries
+
+Alternatively, you can download a pre-built executable for your operating system from the [Releases](../../releases) page.
 
 ## Usage
 
