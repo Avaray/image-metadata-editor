@@ -1,14 +1,14 @@
 [package]
 authors = ["Dawid Wasowski <contact@dav.one>"]
-categories = ["command-line-utilities", "multimedia::images", "development-tools", "multimedia", "utilities"]
+categories = ["command-line-utilities", "development-tools", "filesystem", "multimedia::images", "parsing"]
 description = "A fast, lightweight CLI for reading, writing, and wiping metadata from image files."
 edition = "2024"
+homepage = "https://dav.one/image-metadata-editor/"
 keywords = ["cli", "metadata", "exif", "image", "tool"]
 license = "CC-BY-NC-4.0"
 name = "ime"
-repository = "https://github.com/Avaray/image-metadata-editor"
-homepage = "https://dav.one/image-metadata-editor/"
 readme = "README.md"
+repository = "https://github.com/Avaray/image-metadata-editor"
 rust-version = "1.85"
 version = "1.0.0"
 
