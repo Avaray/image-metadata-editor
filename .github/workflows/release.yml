@@ -29,11 +29,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # `primary: true` marks the one leg that generates the release notes/changelog -
+          # otherwise each matrix leg would generate and append its own copy (duplicate text).
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
             executable_name: ime
             asset_name: ime-linux-amd64
             cross: false
+            primary: true
           # Windows binary is cross-compiled from Ubuntu via cargo-xwin instead of running
           # on windows-latest. This avoids the slower/more expensive Windows runner entirely.
           - os: ubuntu-latest
@@ -41,6 +44,7 @@ jobs:
             executable_name: ime.exe
             asset_name: ime-windows-amd64.exe
             cross: true
+            primary: false
 
     steps:
       - name: Checkout repository
@@ -113,7 +117,9 @@ jobs:
         with:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}
           files: target/${{ matrix.target }}/release/${{ matrix.asset_name }}
-          generate_release_notes: true
+          # Only the primary leg generates notes; the other just uploads its asset
+          # to the release that already exists by the time it gets here (or vice versa).
+          generate_release_notes: ${{ matrix.primary }}
 
   publish-crate:
     name: Publish to crates.io
