@@ -129,7 +129,9 @@ fn inject_png_text(
     inp.read_exact(&mut sig).map_err(|e| e.to_string())?;
     out.write_all(&sig).map_err(|e| e.to_string())?;
 
-    let mut injected = false;
+    // Keys that have already been written (either as new after IHDR or as replacement)
+    let mut written: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut new_injected = false;
 
     loop {
         let mut len_buf = [0u8; 4];
@@ -141,28 +143,48 @@ fn inject_png_text(
         let mut type_buf = [0u8; 4];
         inp.read_exact(&mut type_buf).map_err(|e| e.to_string())?;
 
-        // Inject our tEXt chunks right after IHDR (i.e., before the first non-IHDR chunk)
-        if !injected && &type_buf != b"IHDR" {
+        // After IHDR: inject any new tags that don't exist in the file yet
+        if !new_injected && &type_buf != b"IHDR" {
             for (k, v) in tags {
-                let k_trunc = if k.len() > 79 { &k[..79] } else { k };
-                write_text_chunk(&mut out, k_trunc, v).map_err(|e| e.to_string())?;
+                if !written.contains(k) {
+                    let k_trunc = if k.len() > 79 { &k[..79] } else { k };
+                    write_text_chunk(&mut out, k_trunc, v).map_err(|e| e.to_string())?;
+                    written.insert(k.clone());
+                }
             }
-            injected = true;
+            new_injected = true;
         }
 
+        // Read chunk data + CRC into a buffer so we can inspect / skip
+        let mut chunk_data = vec![0u8; length];
+        inp.read_exact(&mut chunk_data).map_err(|e| e.to_string())?;
+        let mut crc_buf = [0u8; 4];
+        inp.read_exact(&mut crc_buf).map_err(|e| e.to_string())?;
+
+        if &type_buf == b"tEXt"
+            && let Some(nul_pos) = chunk_data.iter().position(|&b| b == 0)
+            && let Ok(chunk_key) = std::str::from_utf8(&chunk_data[..nul_pos])
+            && let Some(new_value) = tags.get(chunk_key)
+        {
+            // Replace this chunk with the new value
+            let k_trunc = if chunk_key.len() > 79 {
+                &chunk_key[..79]
+            } else {
+                chunk_key
+            };
+            write_text_chunk(&mut out, k_trunc, new_value).map_err(|e| e.to_string())?;
+            written.insert(chunk_key.to_string());
+            if &type_buf == b"IEND" {
+                break;
+            }
+            continue;
+        }
+
+        // Pass through unchanged chunk
         out.write_all(&len_buf).map_err(|e| e.to_string())?;
         out.write_all(&type_buf).map_err(|e| e.to_string())?;
-
-        // Copy chunk data + CRC
-        let mut remaining = length + 4;
-        let mut buf = [0u8; 8192];
-        while remaining > 0 {
-            let to_read = std::cmp::min(remaining, buf.len());
-            inp.read_exact(&mut buf[..to_read])
-                .map_err(|e| e.to_string())?;
-            out.write_all(&buf[..to_read]).map_err(|e| e.to_string())?;
-            remaining -= to_read;
-        }
+        out.write_all(&chunk_data).map_err(|e| e.to_string())?;
+        out.write_all(&crc_buf).map_err(|e| e.to_string())?;
 
         if &type_buf == b"IEND" {
             break;

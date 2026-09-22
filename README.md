@@ -1,31 +1,10 @@
-# ime
+# Image Metadata Editor
 
-**ime** (Metadata EXtractor) is a blazingly fast, lightweight, and portable CLI written in **Rust** that reads and writes metadata from image files.
-
-It was primarily designed to handle, strip, and inject metadata in AI-generated images (e.g., from **ComfyUI**, **ForgeUI**, Stable Diffusion), making it easy to extract or manipulate generation prompts and workflow parameters embedded by those tools.
-
----
-
-## Scope & Limitations
-
-- **Primary target:** Modification features (`--strip`, `--set`) support **JPEG** and **PNG** only.
-- **Read-only video/audio:** `ime` can _read_ metadata from various container formats (MP4, MOV, WebP, TIFF…), but modifying them is **not planned**.
-- **Custom tags:** Unknown keys are written as native `tEXt` chunks in PNG (readable by Stable Diffusion viewers) or packed into `UserComment` as JSON in JPEG.
-
----
+**ime** is a fast, lightweight, and portable CLI written in **Rust** that reads and writes metadata from image files.
 
 ## Installation
 
-Build from source:
-
-```bash
-cargo build --release
-# Binary: target/release/ime (Linux) or target/release/ime.exe (Windows)
-```
-
-Or download a pre-built binary from the [Releases](../../releases) page.
-
----
+Download a pre-built binary from the [Releases](../../releases) page.
 
 ## Usage
 
