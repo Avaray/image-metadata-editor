@@ -24,7 +24,4 @@ strip = true
 panic = "abort"
 
 
-[[bin]]
-name = "scratch"
-path = "scratch.rs"
 

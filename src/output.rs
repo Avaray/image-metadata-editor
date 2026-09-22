@@ -18,12 +18,11 @@ pub fn write_output(out: &Output, format: RenderFormat, dest_path: Option<&str>)
         RenderFormat::Text => {
             use std::fmt::Write;
             let mut s = String::new();
-            writeln!(&mut s, "File: {}", out.file).unwrap();
 
-            if out.directories.is_empty() {
+            if out.is_empty() {
                 writeln!(&mut s, "No metadata found.").unwrap();
             } else {
-                for (dir, tags) in &out.directories {
+                for (dir, tags) in out {
                     writeln!(&mut s, "[{}]", dir).unwrap();
                     for (tag, val) in tags {
                         writeln!(&mut s, "  {}: {}", tag, val).unwrap();

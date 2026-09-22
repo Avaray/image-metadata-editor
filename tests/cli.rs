@@ -30,8 +30,7 @@ fn test_cli_on_fixtures() {
             .unwrap()
             .arg(&path)
             .assert()
-            .success()
-            .stdout(predicate::str::contains("File:"));
+            .success(); // We just expect success, no 'File:' header anymore
 
         // JSON output
         let assert = Command::cargo_bin("mex")
@@ -43,7 +42,7 @@ fn test_cli_on_fixtures() {
 
         let json_out: serde_json::Value =
             serde_json::from_slice(&assert.get_output().stdout).unwrap();
-        assert!(json_out.get("file").is_some());
+        assert!(json_out.get("file").is_none());
 
         // Output file
         let temp_dir = tempfile::tempdir().unwrap();

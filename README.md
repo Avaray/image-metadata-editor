@@ -1,6 +1,6 @@
 # mex
 
-**mex** (Metadata EXtractor) is a blazingly fast, lightweight, and portable CLI written in **Rust** that reads and writes metadata from image files.
+**mex** (**M**etadata **EX**tractor) is a fast, lightweight, and portable CLI written in **Rust** that reads and writes metadata from image files.
 
 It was primarily designed to handle, strip, and inject metadata into AI-generated images (e.g., from **ComfyUI**, **ForgeUI**, or Stable Diffusion), making it easy to extract or manipulate custom generation prompts and workflow parameters.
 
@@ -61,7 +61,6 @@ mex photo.jpg -j -o meta.json
 ### Text output example
 
 ```
-File: /home/user/photo.jpg
 [Exif]
   DateTimeOriginal: 2023-08-14 10:20:30
   FocalLength: 24/1 (24.0000)
@@ -75,17 +74,14 @@ File: /home/user/photo.jpg
 
 ```json
 {
-  "file": "/home/user/photo.jpg",
-  "directories": {
-    "Exif": {
-      "DateTimeOriginal": "2023-08-14 10:20:30",
-      "FocalLength": "24/1 (24.0000)",
-      "ISOSpeedRatings": "400"
-    },
-    "Tiff": {
-      "Make": "SONY",
-      "Model": "DSC-RX100M5A"
-    }
+  "Exif": {
+    "DateTimeOriginal": "2023-08-14 10:20:30",
+    "FocalLength": "24/1 (24.0000)",
+    "ISOSpeedRatings": "400"
+  },
+  "Tiff": {
+    "Make": "SONY",
+    "Model": "DSC-RX100M5A"
   }
 }
 ```
