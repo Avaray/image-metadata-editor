@@ -21,8 +21,6 @@ ime <file> [OPTIONS]
 | `--version` | `-v` | Print the semver version number and exit |
 | `--help` | `-h` | Print help and exit |
 
----
-
 ## Reading metadata
 
 Outputs all extracted metadata as a flat JSON object (one key per metadata directory).
@@ -55,8 +53,6 @@ ime photo.jpg -o meta.json
 }
 ```
 
----
-
 ## Extracting a single value (`-k` / `--key`)
 
 Use dot-notation (same style as `jq`) to extract a single tag from the metadata.
@@ -87,8 +83,6 @@ ime photo.jpg -k Exif.NonExistent
 
 When the result is a plain string it is printed without surrounding quotes.  
 When the result is an object or array it is printed as pretty-printed JSON.
-
----
 
 ## Stripping metadata (`-s` / `--strip`)
 
@@ -148,4 +142,4 @@ All notable changes to this project will be documented in the [CHANGELOG.md](CHA
 
 ## 📄 License
 
-This project is licensed under the [CC-BY-NC-4.0 License](LICENSE).
+This project is licensed under the [CC-BY-NC-4.0](LICENSE) License.
