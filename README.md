@@ -148,4 +148,4 @@ All notable changes to this project will be documented in the [CHANGELOG.md](CHA
 
 ## 📄 License
 
-This project is licensed under the [MIT License](LICENSE).
+This project is licensed under the [CC-BY-NC-4.0 License](LICENSE).
