@@ -64,7 +64,7 @@ jobs:
     needs: release # Only publish after successful build and GitHub release
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
