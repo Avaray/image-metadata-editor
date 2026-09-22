@@ -2,7 +2,14 @@
 name = "ime"
 version = "1.0.0"
 edition = "2024"
+rust-version = "1.85"
+authors = ["Dawid Wasowski <contact@dav.one>"]
+description = "A fast, lightweight CLI for reading, writing, and wiping metadata from image files."
+readme = "README.md"
 license = "CC-BY-NC-4.0"
+categories = ["command-line-utilities", "multimedia::images", "development-tools", "multimedia", "utilities"]
+keywords = ["cli", "metadata", "exif", "image", "tool"]
+publish = false
 
 [dependencies]
 crc = "3.4.0"
