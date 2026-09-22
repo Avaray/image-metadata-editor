@@ -1,42 +1,25 @@
-# mex
+# ⚡️ mex
 
 **mex** (**M**etadata **EX**tractor) is a fast, lightweight, and portable CLI written in **Rust** that reads and writes metadata from image files.
 
-It was primarily designed to handle, strip, and inject metadata into AI-generated images (e.g., from **ComfyUI**, **ForgeUI**, or Stable Diffusion), making it easy to extract or manipulate custom generation prompts and workflow parameters.
-
-- Zero runtime dependencies — single statically linked binary
-- Blazingly fast: reads only the bytes that hold metadata; run time does not depend on file size
-- Outputs readable text or JSON
-- Can strip all metadata or inject custom key/value pairs (JPEG & PNG)
-
----
-
 ## Scope & Limitations
 
-- **Primary Target:** Modification features (`--strip`, `--set`) strictly target **JPEG** and **PNG** files, as these are the standard for AI image generation.
-- **Read-Only Video/Audio:** While `mex` can extract and read metadata from various other formats (like MP4, MOV, WebP, TIFF), this is strictly a **read-only** feature. Support for modifying video, audio, or other exotic image formats is minimal and is **not planned** for future expansion.
-- **Custom Tags:** Full custom tag injection (e.g., `prompt`, `workflow`) is natively supported via `tEXt` chunks in PNG. For JPEG, custom tags are packed into the standard `UserComment` EXIF field.
-
----
+- **Primary Target:** Modification features (`--strip`, `--set`) strictly target **JPEG** and **PNG**.
+- **Read-Only Video/Audio:** While `mex` can read metadata from various other formats (like MP4, MOV, WebP, TIFF), this is strictly a **read-only** feature. Support for modifying video, audio, or other exotic image formats is **not planned**..
+- **Custom Tags:** Full custom tag injection (e.g., `prompt`, `workflow`) is natively supported via `tEXt` chunks in PNG. For JPEG, custom tags are packed into the standard `UserComment` EXIF field as JSON.
 
 ## Installation
 
-```bash
-cargo build --release
-# Binary: target/release/mex.exe (Windows) or target/release/mex (Linux/macOS)
-```
-
----
+Download latest [TODO: write instructions]
 
 ## Usage
 
-```
-mex <file> [OPTIONS]
+```bash
+mex /path/to/image.png
 ```
 
 | Flag | Short | Description |
 |------|-------|-------------|
-| `--json` | `-j` | Print metadata as JSON instead of plain text |
 | `--output <path>` | `-o` | Write result (or modified file) to `<path>` instead of stdout / in-place |
 | `--strip` | `-s` | Remove all metadata from the file (JPEG & PNG only) |
 | `--set Key=Value` | | Inject a metadata tag (repeatable, JPEG & PNG only) |
@@ -47,30 +30,17 @@ mex <file> [OPTIONS]
 
 ## Reading metadata
 
+Outputs extracted metadata as a JSON object.
+
 ```bash
-# Print metadata as readable text (default)
+# Print metadata to stdout
 mex photo.jpg
 
-# Print metadata as JSON
-mex photo.jpg --json
-
 # Save output to a file
-mex photo.jpg -j -o meta.json
+mex photo.jpg -o meta.json
 ```
 
-### Text output example
-
-```
-[Exif]
-  DateTimeOriginal: 2023-08-14 10:20:30
-  FocalLength: 24/1 (24.0000)
-  ISOSpeedRatings: 400
-[Tiff]
-  Make: SONY
-  Model: DSC-RX100M5A
-```
-
-### JSON output example
+### Output example
 
 ```json
 {

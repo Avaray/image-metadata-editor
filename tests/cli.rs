@@ -25,18 +25,10 @@ fn test_cli_on_fixtures() {
     }
 
     for path in fixtures {
-        // Text output
-        Command::cargo_bin("mex")
-            .unwrap()
-            .arg(&path)
-            .assert()
-            .success(); // We just expect success, no 'File:' header anymore
-
-        // JSON output
+        // Output is always JSON now
         let assert = Command::cargo_bin("mex")
             .unwrap()
             .arg(&path)
-            .arg("-j")
             .assert()
             .success();
 
@@ -50,7 +42,6 @@ fn test_cli_on_fixtures() {
         Command::cargo_bin("mex")
             .unwrap()
             .arg(&path)
-            .arg("-j")
             .arg("-o")
             .arg(&out_file)
             .assert()
@@ -178,6 +169,6 @@ fn test_strip() {
             .arg(&test_file)
             .assert()
             .success()
-            .stdout(predicate::str::contains("No metadata found"));
+            .stdout(predicate::str::contains("{}"));
     }
 }

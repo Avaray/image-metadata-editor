@@ -14,10 +14,9 @@ fn run() -> Result<(), AppError> {
     match cli::parse_args().map_err(|e| AppError::Usage(e.to_string()))? {
         CliResult::Help => {
             println!(
-                "Usage: mex <file> [-j|--json] [-o|--output <path>] [-s|--strip] [--set Key=Value]"
+                "Usage: mex <file> [-o|--output <path>] [-s|--strip] [--set Key=Value]"
             );
             println!("Options:");
-            println!("  -j, --json          print metadata as JSON");
             println!("  -o, --output <path> write the result to <path> instead of stdout");
             println!(
                 "  -s, --strip         strip metadata from the file (currently JPEG/PNG only)"
@@ -49,13 +48,7 @@ fn run() -> Result<(), AppError> {
             let metadata = extract::extract(&args.file, &mut parser)
                 .map_err(|e| AppError::Runtime(e.to_string()))?;
 
-            let format = if args.json {
-                output::RenderFormat::Json
-            } else {
-                output::RenderFormat::Text
-            };
-
-            output::write_output(&metadata, format, args.output.as_deref())
+            output::write_output(&metadata, args.output.as_deref())
                 .map_err(|e| AppError::Runtime(e.to_string()))?;
             Ok(())
         }
