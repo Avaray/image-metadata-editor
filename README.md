@@ -1,4 +1,4 @@
-# Image Metadata Editor
+# 🧬 Image Metadata Editor
 
 **ime** is a fast, lightweight, and portable CLI written in **Rust** that reads and writes metadata from image files.
 
@@ -138,3 +138,11 @@ ime image.png --set "prompt=a cat sitting on a roof" --set "negative_prompt=blur
 | `0` | Success |
 | `1` | Runtime error (I/O error, unsupported format, key not found, corrupt file) |
 | `2` | Usage error (bad flags, missing file argument) |
+
+## 🧾 Changelog
+
+All notable changes to this project will be documented in the [CHANGELOG.md](CHANGELOG.md) file.
+
+## 📄 License
+
+This project is licensed under the [MIT License](LICENSE).
