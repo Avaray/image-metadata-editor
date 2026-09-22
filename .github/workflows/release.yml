@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*" # Trigger on version tags, e.g., v1.0.0, v0.1.0
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag for manual release (e.g., v0.1.0-test)'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -48,5 +54,6 @@ jobs:
       - name: Create Release and Upload Asset
         uses: softprops/action-gh-release@v3
         with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}
           files: target/${{ matrix.target }}/release/${{ matrix.asset_name }}
           generate_release_notes: true
