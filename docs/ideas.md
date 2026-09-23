@@ -1,14 +1,16 @@
 # Future Ideas
 
-## Adding a GUI (The Workspace Approach)
+## Native GUI (The Workspace Approach)
 
-If we ever want to add a graphical user interface (e.g., using `egui` and `eframe`) without bloating the CLI version of the tool, the best architectural approach in Rust is a **Cargo Workspace**.
+We recently implemented a built-in Interactive Terminal UI (TUI) via the `--tui` flag using `ratatui`. This allowed us to add a rich visual experience while keeping the single binary extremely lightweight, as TUI libraries avoid heavy graphics driver dependencies (`wgpu`, `vulkan`, etc.).
+
+However, if we ever want to add a fully-fledged **Native Graphical User Interface** (e.g., using `egui` and `eframe`), the best architectural approach remains a **Cargo Workspace**.
 
 ### Structure
 The project would be divided into three separate crates sharing the same root directory:
-1. **`ime-core` (Library Crate)**: Contains 100% of the core logic (metadata parsing, reading, writing, wiping). It has zero CLI parsing and zero GUI dependencies.
-2. **`ime` (Binary Crate)**: The command-line interface. Depends on `ime-core` and `lexopt`. It parses terminal arguments and calls the core.
-3. **`ime-gui` (Binary Crate)**: The graphical application. Depends on `ime-core` and `egui`. It handles the windowing, event loop, and calls the core.
+1. **`ime-core` (Library Crate)**: Contains 100% of the core logic (metadata parsing, reading, writing, wiping). It has zero CLI/GUI dependencies.
+2. **`ime-cli` (Binary Crate)**: The current command-line and TUI interface. Depends on `ime-core`, `lexopt`, and `ratatui`.
+3. **`ime-gui` (Binary Crate)**: The native windowed application. Depends on `ime-core` and `egui`.
 
 ### Directory Layout
 ```text
@@ -25,10 +27,10 @@ image-metadata-editor/
     └── src/main.rs
 ```
 
-### Benefits
-- **Total Isolation**: The CLI crate doesn't have any dependencies on heavy graphics libraries like `winit` or `wgpu`. Its compiled binary size remains tiny (1-3MB).
-- **Distribution**: We can publish `ime` and `ime-gui` as separate packages on `crates.io`.
-- **User Experience**: 
-  - Users typing `cargo install ime` get exactly what they want—a fast CLI.
-  - Users who want the visual editor run `cargo install ime-gui`.
-  - GitHub Releases would simply offer two different executables for standard users (e.g., `ime.exe` and `ime-gui.exe`).
+## TUI Improvements
+
+While the current TUI is fully functional, here are ideas for future enhancements:
+
+- **Mouse Support**: Allow clicking on the file list to switch files, or clicking on a metadata row to start editing it instantly. This was temporarily deferred to keep the initial TUI scope small, as managing scroll offsets manually for click targeting in `ratatui` requires a bit of state management overhead.
+- **Search & Filter**: Add a search bar (`/`) to quickly filter the metadata list for specific keys or values (especially useful for images with hundreds of EXIF tags).
+- **Batch Editing**: Allow selecting multiple files in the file tree (e.g., with `Space`) and injecting/stripping metadata from all of them at once directly from the TUI.
