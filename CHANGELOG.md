@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-23
+
+### Added
+- **Interactive TUI Mode (`-t` / `--tui`)**: A fully featured split-screen terminal user interface for browsing files and live-editing metadata.
+- **Nested JSON Drill-Down**: In TUI mode, pressing `Enter` on JSON values steps inside them, enabling direct metadata exploration and editing of nested properties.
+- **WebP Support**: Added lightweight, zero-copy support for stripping and writing metadata to WebP images.
+- **Batch Processing**: Added support for reading, writing, and stripping metadata from entire directories, with an optional `-r` / `--recursive` flag.
+
+### Fixed
+- Decoded hexadecimal strings for `Exif.UserComment` to properly display embedded Unicode/ASCII text.
+- Fixed a bug on Windows where key events were triggered twice in the TUI (both on press and release).
+- Improved parsing of stringified JSON blocks inside PNG chunks, allowing them to be correctly unescaped and drilled into within the TUI.
+- Fixed visual glitches in the TUI by upgrading text inputs to handle block cursors.
+
 ## [1.0.0] - 2026-09-22
 
 ### Added
