@@ -140,7 +140,10 @@ jobs:
       - name: Cache cargo registry and build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          key: publish-crate
+          # Use the Linux build cache to speed up publish verification, but don't save
+          # to avoid ENOENT errors when rust-cache tries to clean up cargo's ephemeral package dirs.
+          key: x86_64-unknown-linux-musl
+          save-if: false
 
       - name: Publish to crates.io
         env:
