@@ -117,9 +117,13 @@ jobs:
         with:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}
           files: target/${{ matrix.target }}/release/${{ matrix.asset_name }}
-          # Only the primary leg generates notes; the other just uploads its asset
-          # to the release that already exists by the time it gets here (or vice versa).
           generate_release_notes: ${{ matrix.primary }}
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: target/${{ matrix.target }}/release/${{ matrix.asset_name }}
 
   publish-crate:
     name: Publish to crates.io
@@ -149,3 +153,63 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: cargo publish
+
+  publish-npm:
+    name: Publish to NPM
+    runs-on: ubuntu-latest
+    needs: release
+    if: github.event_name != 'workflow_dispatch'
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Download Linux binary
+        uses: actions/download-artifact@v4
+        with:
+          name: ime-linux-amd64
+          path: npm/ime-linux-x64/
+
+      - name: Download Windows binary
+        uses: actions/download-artifact@v4
+        with:
+          name: ime-windows-amd64.exe
+          path: npm/ime-win32-x64/
+
+      - name: Prepare binaries and versions
+        run: |
+          mv npm/ime-linux-x64/ime-linux-amd64 npm/ime-linux-x64/ime
+          chmod +x npm/ime-linux-x64/ime
+          mv npm/ime-win32-x64/ime-windows-amd64.exe npm/ime-win32-x64/ime.exe
+
+          VERSION=${GITHUB_REF_NAME#v}
+          for pkg in npm/*/package.json; do
+            tmp=$(mktemp)
+            jq ".version = \"$VERSION\"" "$pkg" > "$tmp" && mv "$tmp" "$pkg"
+          done
+
+      - name: Publish Linux Package
+        run: npm publish --provenance --access public
+        working-directory: npm/ime-linux-x64
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish Windows Package
+        run: npm publish --provenance --access public
+        working-directory: npm/ime-win32-x64
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish Main Package
+        run: npm publish --provenance --access public
+        working-directory: npm/ime-cli
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

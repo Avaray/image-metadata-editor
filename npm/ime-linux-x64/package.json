@@ -1,0 +1,13 @@
+{
+  "name": "ime-linux-x64",
+  "version": "1.1.0",
+  "description": "Linux x64 binary for ime-cli",
+  "os": ["linux"],
+  "cpu": ["x64"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Avaray/image-metadata-editor.git"
+  },
+  "author": "Avaray",
+  "license": "MIT"
+}

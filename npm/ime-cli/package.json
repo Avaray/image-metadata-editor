@@ -1,0 +1,18 @@
+{
+  "name": "ime-cli",
+  "version": "1.1.0",
+  "description": "Blazing fast image metadata (EXIF/WebP) reader and editor.",
+  "bin": {
+    "ime": "bin.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Avaray/image-metadata-editor.git"
+  },
+  "author": "Avaray",
+  "license": "MIT",
+  "optionalDependencies": {
+    "ime-win32-x64": "1.1.0",
+    "ime-linux-x64": "1.1.0"
+  }
+}
