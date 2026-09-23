@@ -149,7 +149,8 @@ ime ./photos -s -r
 | Category | Formats | Read | Write |
 |----------|---------|------|-------|
 | Image | JPEG, PNG | ✅ | ✅ |
-| Image | WebP, HEIC/HEIF, AVIF, TIFF, CR3, RAF, IIQ | ✅ | ❌ |
+| Image | WebP | ✅ | ✅ |
+| Image | HEIC/HEIF, AVIF, TIFF, CR3, RAF, IIQ | ✅ | ❌ |
 | Video | MP4, MOV, 3GP, MKV, WebM | ✅ | ❌ |
 
 ## Exit codes
