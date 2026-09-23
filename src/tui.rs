@@ -377,6 +377,22 @@ fn get_json_at_path_mut<'a>(val: &'a mut serde_json::Value, path: &[String]) -> 
     Some(curr)
 }
 
+fn is_drillable_json(val: &str) -> bool {
+    let trimmed = val.trim();
+    if !trimmed.starts_with('{') && !trimmed.starts_with('[') {
+        return false;
+    }
+    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(trimmed) {
+        match parsed {
+            serde_json::Value::Object(map) => !map.is_empty(),
+            serde_json::Value::Array(arr) => !arr.is_empty(),
+            _ => false,
+        }
+    } else {
+        false
+    }
+}
+
 pub fn run(path: &str) -> Result<(), AppError> {
     enable_raw_mode().map_err(|e| AppError::Runtime(e.to_string()))?;
     let mut stdout = io::stdout();
@@ -455,8 +471,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                                         if let Some(idx) = app.meta_state.selected() {
                                             if let Some(tag) = app.meta_keys.get(idx).cloned() {
                                                 let val = app.meta_values.get(&tag).cloned().unwrap_or_default();
-                                                let is_json = val.trim().starts_with('{') || val.trim().starts_with('[');
-                                                if is_json && serde_json::from_str::<serde_json::Value>(&val).is_ok() {
+                                                if is_drillable_json(&val) {
                                                     app.json_path.push(tag);
                                                     app.reload_meta_view();
                                                 }
@@ -474,8 +489,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                                         if let Some(idx) = app.meta_state.selected() {
                                             if let Some(tag) = app.meta_keys.get(idx).cloned() {
                                                 let val = app.meta_values.get(&tag).cloned().unwrap_or_default();
-                                                let is_json = val.trim().starts_with('{') || val.trim().starts_with('[');
-                                                if is_json && serde_json::from_str::<serde_json::Value>(&val).is_ok() {
+                                                if is_drillable_json(&val) {
                                                     app.json_path.push(tag);
                                                     app.reload_meta_view();
                                                 } else {
@@ -613,7 +627,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
 fn ui(f: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(0), Constraint::Length(3)].as_ref())
+        .constraints([Constraint::Min(0), Constraint::Length(1)].as_ref())
         .split(f.area());
 
     let top_chunks = Layout::default()
@@ -667,8 +681,7 @@ fn ui(f: &mut Frame, app: &mut App) {
             let is_edited = app.pending_edits.contains_key(if app.json_path.is_empty() { key } else { &app.json_path[0] });
             let color = if is_edited { Color::Green } else { Color::Reset };
             
-            // if val is JSON object/array, indicate it
-            let is_json = val.trim().starts_with('{') || val.trim().starts_with('[');
+            let is_json = is_drillable_json(&val);
             let display_key = if is_json { format!("{} [+] ", key) } else { format!("{}: ", key) };
 
             let line = Line::from(vec![
@@ -700,7 +713,7 @@ fn ui(f: &mut Frame, app: &mut App) {
     };
 
     let version_text = format!(" ime v{} ", env!("CARGO_PKG_VERSION"));
-    let version_width = version_text.chars().count() as u16 + 2;
+    let version_width = version_text.chars().count() as u16;
 
     let bottom_layout = Layout::default()
         .direction(Direction::Horizontal)
@@ -708,15 +721,13 @@ fn ui(f: &mut Frame, app: &mut App) {
         .split(chunks[1]);
 
     let p = Paragraph::new(help_text)
-        .block(Block::default().borders(Borders::ALL))
         .style(match app.state {
-            AppState::ConfirmExit => Style::default().fg(Color::Red),
-            _ => Style::default(),
+            AppState::ConfirmExit => Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            _ => Style::default().add_modifier(Modifier::REVERSED),
         });
     f.render_widget(p, bottom_layout[0]);
 
-    let version_p = Paragraph::new(Line::from(Span::raw(version_text)))
-        .block(Block::default().borders(Borders::ALL))
+    let version_p = Paragraph::new(Line::from(Span::styled(version_text, Style::default().add_modifier(Modifier::REVERSED))))
         .alignment(Alignment::Right);
     f.render_widget(version_p, bottom_layout[1]);
 
