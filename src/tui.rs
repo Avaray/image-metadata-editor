@@ -141,10 +141,11 @@ struct App {
     state: AppState,
     should_quit: bool,
     power_user: bool,
+    explorer_mode: bool,
 }
 
 impl App {
-    fn new(start_path: PathBuf, power_user: bool) -> Result<Self, AppError> {
+    fn new(start_path: PathBuf, power_user: bool, explorer_mode: bool) -> Result<Self, AppError> {
         let (current_dir, initial_file) = if start_path.is_dir() { (start_path.clone(), None) } else { (start_path.parent().unwrap_or_else(|| std::path::Path::new("")).to_path_buf(), Some(start_path.clone())) };
 
         let mut app = App {
@@ -165,6 +166,7 @@ impl App {
             state: AppState::Normal,
             should_quit: false,
             power_user,
+            explorer_mode,
         };
 
         app.load_files()?;
@@ -184,6 +186,15 @@ impl App {
 
     fn load_files(&mut self) -> Result<(), AppError> {
         self.files.clear();
+
+        if self.explorer_mode {
+            if let Some(parent) = self.current_dir.parent() {
+                if !parent.as_os_str().is_empty() {
+                    self.files.push(self.current_dir.join(".."));
+                }
+            }
+        }
+
         if let Ok(entries) = fs::read_dir(&self.current_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
@@ -193,10 +204,31 @@ impl App {
                             self.files.push(path);
                         }
                     }
+                } else if path.is_dir() && self.explorer_mode {
+                    self.files.push(path);
                 }
             }
         }
-        self.files.sort();
+
+        self.files.sort_by(|a, b| {
+            let a_is_dotdot = a.file_name().unwrap_or_default() == "..";
+            let b_is_dotdot = b.file_name().unwrap_or_default() == "..";
+            if a_is_dotdot && !b_is_dotdot {
+                std::cmp::Ordering::Less
+            } else if !a_is_dotdot && b_is_dotdot {
+                std::cmp::Ordering::Greater
+            } else {
+                let a_is_dir = a.is_dir() || a_is_dotdot;
+                let b_is_dir = b.is_dir() || b_is_dotdot;
+                if a_is_dir && !b_is_dir {
+                    std::cmp::Ordering::Less
+                } else if !a_is_dir && b_is_dir {
+                    std::cmp::Ordering::Greater
+                } else {
+                    a.cmp(b)
+                }
+            }
+        });
         Ok(())
     }
 
@@ -475,12 +507,16 @@ impl App {
     fn is_read_only(&self) -> bool {
         if let Some(idx) = self.file_state.selected() {
             if let Some(path) = self.files.get(idx) {
+                if path.is_dir() || path.file_name().unwrap_or_default() == ".." {
+                    return true;
+                }
                 if let Some(ext) = path.extension().and_then(|e| e.to_str()).map(|s| s.to_lowercase()) {
                     return !matches!(ext.as_str(), "jpg" | "jpeg" | "png" | "webp");
                 }
+                return true;
             }
         }
-        false
+        true
     }
 }
 
@@ -617,14 +653,14 @@ fn render_cursor_spans(chars: &[char], cursor: usize) -> (String, String, String
     (before, cursor_char, after)
 }
 
-pub fn run(path: &str, power_user: bool) -> Result<(), AppError> {
+pub fn run(path: &str, power_user: bool, explorer_mode: bool) -> Result<(), AppError> {
     enable_raw_mode().map_err(|e| AppError::Runtime(e.to_string()))?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture).map_err(|e| AppError::Runtime(e.to_string()))?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend).map_err(|e| AppError::Runtime(e.to_string()))?;
 
-    let app = App::new(PathBuf::from(path), power_user)?;
+    let app = App::new(PathBuf::from(path), power_user, explorer_mode)?;
     let res = run_app(&mut terminal, app);
 
     disable_raw_mode().map_err(|e| AppError::Runtime(e.to_string()))?;
@@ -715,6 +751,22 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                             },
                             KeyCode::Enter => match app.focus {
                                 Focus::FileList => {
+                                    if app.explorer_mode {
+                                        if let Some(idx) = app.file_state.selected() {
+                                            if let Some(path) = app.files.get(idx).cloned() {
+                                                if path.is_dir() || path.file_name().unwrap_or_default() == ".." {
+                                                    let new_dir = if path.file_name().unwrap_or_default() == ".." { app.current_dir.parent().unwrap_or(&app.current_dir).to_path_buf() } else { path };
+                                                    if new_dir != app.current_dir {
+                                                        app.current_dir = new_dir;
+                                                        let _ = app.load_files();
+                                                        app.file_state.select(if app.files.is_empty() { None } else { Some(0) });
+                                                        app.load_selected_metadata();
+                                                        continue;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                     app.focus = Focus::Metadata;
                                 }
                                 Focus::Metadata => {
@@ -1056,8 +1108,26 @@ fn ui(f: &mut Frame, app: &mut App) {
         .files
         .iter()
         .map(|p| {
-            let name = p.file_name().unwrap_or_default().to_string_lossy();
-            ListItem::new(name.into_owned())
+            let name = p.file_name().unwrap_or_default().to_string_lossy().into_owned();
+            let mut prefix = "";
+            if app.explorer_mode {
+                if name == ".." {
+                    prefix = "\u{f060} "; // 
+                } else if p.is_dir() {
+                    prefix = "\u{f07b} "; // 
+                } else if let Some(ext) = p.extension().and_then(|e| e.to_str()).map(|s| s.to_lowercase()) {
+                    if matches!(ext.as_str(), "jpg" | "jpeg" | "png" | "webp" | "heic" | "heif" | "avif" | "tiff" | "tif" | "cr3" | "raf" | "iiq") {
+                        prefix = "\u{f1c5} "; // 
+                    } else if matches!(ext.as_str(), "mp4" | "mov" | "3gp" | "mkv" | "webm") {
+                        prefix = "\u{f03d} "; // 
+                    } else {
+                        prefix = "\u{f15b} "; // 
+                    }
+                } else {
+                    prefix = "\u{f15b} "; // 
+                }
+            }
+            ListItem::new(format!("{}{}", prefix, name))
         })
         .collect();
 

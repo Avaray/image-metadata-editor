@@ -42,7 +42,7 @@ fn run() -> Result<(), AppError> {
         }
         CliResult::Args(args) => {
             if args.tui {
-                return crate::tui::run(&args.file, args.power_user);
+                return crate::tui::run(&args.file, args.power_user, args.explorer_mode);
             }
 
             let meta = std::fs::metadata(&args.file).map_err(|e| AppError::Runtime(format!("Failed to read file info: {}", e)))?;
