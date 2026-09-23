@@ -28,6 +28,8 @@ ime <file> [OPTIONS]
 | `--strip` | `-s` | Remove all metadata from the file (JPEG & PNG only) |
 | `--set Key=Value` | | Inject a metadata tag; repeatable (JPEG & PNG only) |
 | `--key <path>` | `-k` | Extract a single value using a dot-notation path |
+| `--dir` | `-d` | Explicitly indicate the input is a directory (optional) |
+| `--recursive` | `-r` | Recursively process subdirectories when a directory is provided |
 | `--version` | `-v` | Print the semver version number and exit |
 | `--help` | `-h` | Print help and exit |
 
@@ -131,6 +133,15 @@ ime image.png --set "prompt=a cat sitting on a roof" --set "negative_prompt=blur
 
 # Inject multiple tags from a JSON object
 ime image.png --set-json '{"prompt":"a cat","steps":30,"cfg":7}'
+```
+
+## Batch Processing
+
+If you provide a directory path instead of a file, `ime` will automatically process all supported files in that directory. Use the `-r` flag to process subdirectories recursively.
+
+```bash
+# Strip metadata from all images in the 'photos' directory and its subdirectories
+ime ./photos -s -r
 ```
 
 ## Supported formats
