@@ -50,7 +50,7 @@ jobs:
         run: mv target/x86_64-unknown-linux-musl/release/ime target/x86_64-unknown-linux-musl/release/ime-linux-amd64
 
       - name: Upload binary artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ime-linux-amd64
           path: target/x86_64-unknown-linux-musl/release/ime-linux-amd64
@@ -98,7 +98,7 @@ jobs:
         run: mv target/x86_64-pc-windows-msvc/release/ime.exe target/x86_64-pc-windows-msvc/release/ime-windows-amd64.exe
 
       - name: Upload binary artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ime-windows-amd64.exe
           path: target/x86_64-pc-windows-msvc/release/ime-windows-amd64.exe
@@ -109,13 +109,13 @@ jobs:
     needs: [build-linux, build-windows]
     steps:
       - name: Download Linux binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ime-linux-amd64
           path: dist/
 
       - name: Download Windows binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ime-windows-amd64.exe
           path: dist/
@@ -165,19 +165,19 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
       - name: Download Linux binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ime-linux-amd64
           path: npm/ime-linux-x64/
 
       - name: Download Windows binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ime-windows-amd64.exe
           path: npm/ime-win32-x64/
