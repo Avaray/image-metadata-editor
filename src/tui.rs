@@ -754,13 +754,13 @@ fn ui(f: &mut Frame, app: &mut App) {
         .block(Block::default().borders(Borders::ALL))
         .style(match app.state {
             AppState::ConfirmExit => Style::default().fg(Color::Red),
-            _ => Style::default().fg(Color::Yellow),
+            _ => Style::default(),
         });
     f.render_widget(p, bottom_layout[0]);
 
     let version_p = Paragraph::new(Line::from(Span::raw(version_text)))
         .block(Block::default().borders(Borders::ALL))
-        .style(Style::default().fg(Color::Yellow))
+        .style(Style::default())
         .alignment(Alignment::Right);
     f.render_widget(version_p, bottom_layout[1]);
 
