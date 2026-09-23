@@ -29,22 +29,34 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - id: check
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "is_new_version=true" >> $GITHUB_OUTPUT
-            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "is_new_version=true" >> "$GITHUB_OUTPUT"
+            echo "version=$INPUT_VERSION" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           VERSION=$(grep '^version = ' Cargo.toml | head -1 | awk -F '"' '{print $2}')
+          [ -n "$VERSION" ] || { echo "Failed to read version from Cargo.toml"; exit 1; }
           echo "Cargo.toml version: $VERSION"
-          if git ls-remote --tags origin | grep -q "refs/tags/v$VERSION"; then
+
+          rc=0
+          git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null || rc=$?
+
+          if [ "$rc" -eq 0 ]; then
             echo "Tag v$VERSION already exists."
-            echo "is_new_version=false" >> $GITHUB_OUTPUT
-          else
+            echo "is_new_version=false" >> "$GITHUB_OUTPUT"
+          elif [ "$rc" -eq 2 ]; then
             echo "Tag v$VERSION does not exist. Proceeding with release..."
-            echo "is_new_version=true" >> $GITHUB_OUTPUT
-            echo "version=v$VERSION" >> $GITHUB_OUTPUT
+            echo "is_new_version=true" >> "$GITHUB_OUTPUT"
+            echo "version=v$VERSION" >> "$GITHUB_OUTPUT"
+          else
+            echo "git ls-remote failed (exit $rc)"
+            exit 1
           fi
 
   build-linux:
@@ -215,12 +227,13 @@ jobs:
           path: npm/ime-win32-x64/
 
       - name: Prepare binaries and versions
+        env:
+          TAG_NAME: ${{ needs.check-version.outputs.version }}
         run: |
           mv npm/ime-linux-x64/ime-linux-amd64 npm/ime-linux-x64/ime
           chmod +x npm/ime-linux-x64/ime
           mv npm/ime-win32-x64/ime-windows-amd64.exe npm/ime-win32-x64/ime.exe
 
-          TAG_NAME="${{ needs.check-version.outputs.version }}"
           VERSION=${TAG_NAME#v}
 
           # Update version field in every npm package
