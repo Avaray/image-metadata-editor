@@ -410,17 +410,14 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                                 app.should_quit = true;
                             }
-                            KeyCode::Backspace => {
+                            KeyCode::Backspace | KeyCode::Esc => {
                                 if matches!(app.focus, Focus::Metadata) && !app.json_path.is_empty() {
                                     app.json_path.pop();
                                     app.reload_meta_view();
                                 }
                             }
-                            KeyCode::Char('q') | KeyCode::Esc => {
-                                if matches!(app.focus, Focus::Metadata) && !app.json_path.is_empty() {
-                                    app.json_path.pop();
-                                    app.reload_meta_view();
-                                } else if !app.pending_edits.is_empty() {
+                            KeyCode::Char('q') => {
+                                if !app.pending_edits.is_empty() {
                                     app.state = AppState::ConfirmExit;
                                 } else {
                                     app.should_quit = true;
@@ -435,6 +432,38 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                                     Focus::FileList => Focus::Metadata,
                                     Focus::Metadata => Focus::FileList,
                                 };
+                            }
+                            KeyCode::Left => {
+                                match app.focus {
+                                    Focus::FileList => {}
+                                    Focus::Metadata => {
+                                        if !app.json_path.is_empty() {
+                                            app.json_path.pop();
+                                            app.reload_meta_view();
+                                        } else {
+                                            app.focus = Focus::FileList;
+                                        }
+                                    }
+                                }
+                            }
+                            KeyCode::Right => {
+                                match app.focus {
+                                    Focus::FileList => {
+                                        app.focus = Focus::Metadata;
+                                    }
+                                    Focus::Metadata => {
+                                        if let Some(idx) = app.meta_state.selected() {
+                                            if let Some(tag) = app.meta_keys.get(idx).cloned() {
+                                                let val = app.meta_values.get(&tag).cloned().unwrap_or_default();
+                                                let is_json = val.trim().starts_with('{') || val.trim().starts_with('[');
+                                                if is_json && serde_json::from_str::<serde_json::Value>(&val).is_ok() {
+                                                    app.json_path.push(tag);
+                                                    app.reload_meta_view();
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                             KeyCode::Enter => {
                                 match app.focus {
@@ -659,11 +688,11 @@ fn ui(f: &mut Frame, app: &mut App) {
     // ── Bottom: Help & Instructions ──
     let help_text = match app.state {
         AppState::Normal => {
-            let back = if !app.json_path.is_empty() { " | [Backspace] Back Up" } else { "" };
+            let back = if !app.json_path.is_empty() { " | [←/Backspace] Back Up" } else { "" };
             if !app.pending_edits.is_empty() {
-                format!(" [Tab] Focus | [↑/↓] Move | [e/Enter] Edit/Open{} | [s] Strip | [r] Refresh | [Ctrl+S] Save | [q] Quit ", back)
+                format!(" [Tab] Focus | [←/→/↑/↓] Navigate | [e/Enter] Edit/Open{} | [s] Strip | [r] Refresh | [Ctrl+S] Save | [q] Quit ", back)
             } else {
-                format!(" [Tab] Focus | [↑/↓] Move | [e/Enter] Edit/Open{} | [s] Strip | [r] Refresh | [q] Quit ", back)
+                format!(" [Tab] Focus | [←/→/↑/↓] Navigate | [e/Enter] Edit/Open{} | [s] Strip | [r] Refresh | [q] Quit ", back)
             }
         },
         AppState::Editing { .. } => " [Enter] Save edit | [Esc/Ctrl+C] Cancel | [Ctrl+←/→] Jump ".to_string(),
