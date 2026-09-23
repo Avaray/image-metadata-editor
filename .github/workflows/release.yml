@@ -196,11 +196,6 @@ jobs:
             jq ".version = \"$VERSION\"" "$pkg" > "$tmp" && mv "$tmp" "$pkg"
           done
 
-          # Also update optionalDependencies in the main package to match the tag version
-          tmp=$(mktemp)
-          jq ".optionalDependencies[\"@avaray/ime-win32-x64\"] = \"$VERSION\" | .optionalDependencies[\"@avaray/ime-linux-x64\"] = \"$VERSION\"" \
-            npm/ime-cli/package.json > "$tmp" && mv "$tmp" npm/ime-cli/package.json
-
       - name: Publish Linux Package
         run: npm publish --provenance --access public
         working-directory: npm/ime-linux-x64

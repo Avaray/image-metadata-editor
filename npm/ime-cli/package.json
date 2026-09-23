@@ -12,7 +12,7 @@
   "author": "Avaray",
   "license": "MIT",
   "optionalDependencies": {
-    "@avaray/ime-win32-x64": "1.1.0",
-    "@avaray/ime-linux-x64": "1.1.0"
+    "@avaray/ime-win32-x64": "*",
+    "@avaray/ime-linux-x64": "*"
   }
 }
