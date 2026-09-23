@@ -35,6 +35,16 @@ impl InputState {
         self.cursor += 1;
     }
 
+    fn insert_str(&mut self, s: &str) {
+        let mut chars: Vec<char> = self.value.chars().collect();
+        let s_chars: Vec<char> = s.chars().collect();
+        for (i, &ch) in s_chars.iter().enumerate() {
+            chars.insert(self.cursor + i, ch);
+        }
+        self.value = chars.into_iter().collect();
+        self.cursor += s_chars.len();
+    }
+
     fn remove(&mut self) {
         if self.cursor > 0 {
             let mut chars: Vec<char> = self.value.chars().collect();
@@ -178,7 +188,11 @@ impl App {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.is_file() {
-                    self.files.push(path);
+                    if let Some(ext) = path.extension().and_then(|e| e.to_str()).map(|s| s.to_lowercase()) {
+                        if matches!(ext.as_str(), "jpg" | "jpeg" | "png" | "webp") {
+                            self.files.push(path);
+                        }
+                    }
                 }
             }
         }
@@ -690,6 +704,8 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                                                 app.state = AppState::Editing { tag, input: InputState::new(val) };
                                             }
                                         }
+                                    } else {
+                                        app.state = AppState::AddingTag { key: InputState::default(), value: InputState::default(), focus_value: false };
                                     }
                                 }
                             },
@@ -825,6 +841,16 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                             app.state = AppState::Normal;
                         }
+                        KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            if let Ok(mut cb) = arboard::Clipboard::new() {
+                                if let Ok(text) = cb.get_text() {
+                                    input.insert_str(&text);
+                                }
+                            }
+                        }
+                        KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                            input.insert('\n');
+                        }
                         KeyCode::Enter => {
                             let val = input.value.clone();
                             let tag_clone = tag.clone();
@@ -866,6 +892,23 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                         }
                         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                             app.state = AppState::Normal;
+                        }
+                        KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            if let Ok(mut cb) = arboard::Clipboard::new() {
+                                if let Ok(text) = cb.get_text() {
+                                    if *focus_value {
+                                        val_inp.insert_str(&text);
+                                    } else {
+                                        // Usually tag keys don't have newlines, but we can just insert anyway
+                                        key_inp.insert_str(&text);
+                                    }
+                                }
+                            }
+                        }
+                        KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                            if *focus_value {
+                                val_inp.insert('\n');
+                            }
                         }
                         KeyCode::Enter => {
                             if !*focus_value {
@@ -1052,12 +1095,12 @@ fn ui(f: &mut Frame, app: &mut App) {
             }
         }
         AppState::Searching => " [↑/↓] Navigate results | [Enter] Confirm filter | [Esc] Clear & exit search ".to_string(),
-        AppState::Editing { .. } => " [Enter] Save edit | [Esc/Ctrl+C] Cancel | [Ctrl+←/→] Jump ".to_string(),
+        AppState::Editing { .. } => " [Enter] Save | [Shift+Enter] Newline | [Ctrl+V] Paste | [Esc/Ctrl+C] Cancel | [Ctrl+←/→] Jump ".to_string(),
         AppState::AddingTag { focus_value, .. } => {
             if *focus_value {
-                " [Enter] Save tag | [Tab] Back to Key | [Esc/Ctrl+C] Cancel ".to_string()
+                " [Enter] Save | [Shift+Enter] Newline | [Ctrl+V] Paste | [Tab] Back to Key | [Esc/Ctrl+C] Cancel ".to_string()
             } else {
-                " [Enter/Tab] Move to Value | [Esc/Ctrl+C] Cancel ".to_string()
+                " [Enter/Tab] Move to Value | [Ctrl+V] Paste | [Esc/Ctrl+C] Cancel ".to_string()
             }
         }
         AppState::ConfirmStrip => " Strip all metadata? [y] Yes  [n/Esc] No ".to_string(),
