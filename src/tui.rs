@@ -657,7 +657,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
 fn ui(f: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(0), Constraint::Length(1)].as_ref())
+        .constraints([Constraint::Min(0), Constraint::Length(3)].as_ref())
         .split(f.area());
 
     let top_chunks = Layout::default()
@@ -743,7 +743,7 @@ fn ui(f: &mut Frame, app: &mut App) {
     };
 
     let version_text = format!(" ime v{} ", env!("CARGO_PKG_VERSION"));
-    let version_width = version_text.chars().count() as u16;
+    let version_width = version_text.chars().count() as u16 + 2;
 
     let bottom_layout = Layout::default()
         .direction(Direction::Horizontal)
@@ -751,13 +751,16 @@ fn ui(f: &mut Frame, app: &mut App) {
         .split(chunks[1]);
 
     let p = Paragraph::new(help_text)
+        .block(Block::default().borders(Borders::ALL))
         .style(match app.state {
-            AppState::ConfirmExit => Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-            _ => Style::default().add_modifier(Modifier::REVERSED),
+            AppState::ConfirmExit => Style::default().fg(Color::Red),
+            _ => Style::default().fg(Color::Yellow),
         });
     f.render_widget(p, bottom_layout[0]);
 
-    let version_p = Paragraph::new(Line::from(Span::styled(version_text, Style::default().add_modifier(Modifier::REVERSED))))
+    let version_p = Paragraph::new(Line::from(Span::raw(version_text)))
+        .block(Block::default().borders(Borders::ALL))
+        .style(Style::default().fg(Color::Yellow))
         .alignment(Alignment::Right);
     f.render_widget(version_p, bottom_layout[1]);
 
