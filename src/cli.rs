@@ -9,6 +9,7 @@ pub struct Args {
     pub set_json: Option<String>,
     pub recursive: bool,
     pub directory: bool,
+    pub tui: bool,
 }
 
 pub enum CliResult {
@@ -27,9 +28,13 @@ pub fn parse_args() -> Result<CliResult, lexopt::Error> {
     let mut set_json = None;
     let mut recursive = false;
     let mut directory = false;
+    let mut tui = false;
 
     while let Some(arg) = parser.next()? {
         match arg {
+            Arg::Short('t') | Arg::Long("tui") => {
+                tui = true;
+            }
             Arg::Short('s') | Arg::Long("strip") => {
                 strip = true;
             }
@@ -82,6 +87,7 @@ pub fn parse_args() -> Result<CliResult, lexopt::Error> {
             set_json,
             recursive,
             directory,
+            tui,
         })),
         None => Err(lexopt::Error::MissingValue {
             option: Some("file".to_string()),

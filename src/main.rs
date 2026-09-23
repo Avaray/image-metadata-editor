@@ -7,6 +7,7 @@ mod model;
 mod output;
 mod strip;
 mod webp;
+pub mod tui;
 
 use cli::CliResult;
 use error::AppError;
@@ -48,6 +49,10 @@ fn run() -> Result<(), AppError> {
             Ok(())
         }
         CliResult::Args(args) => {
+            if args.tui {
+                return crate::tui::run(&args.file);
+            }
+
             let meta = std::fs::metadata(&args.file).map_err(|e| AppError::Runtime(format!("Failed to read file info: {}", e)))?;
             
             if meta.is_dir() {
