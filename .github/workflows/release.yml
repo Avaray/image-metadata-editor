@@ -27,7 +27,7 @@ jobs:
       is_new_version: ${{ steps.check.outputs.is_new_version }}
       version: ${{ steps.check.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: check
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
