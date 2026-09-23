@@ -49,9 +49,7 @@ pub fn parse_args() -> Result<CliResult, lexopt::Error> {
                 if let Some((k, v)) = val.split_once('=') {
                     set.insert(k.to_string(), v.to_string());
                 } else {
-                    return Err(lexopt::Error::Custom(
-                        "Invalid --set format, expected Key=Value or .path.to.key=Value".into(),
-                    ));
+                    return Err(lexopt::Error::Custom("Invalid --set format, expected Key=Value or .path.to.key=Value".into()));
                 }
             }
             Arg::Long("set-json") => {
@@ -78,19 +76,7 @@ pub fn parse_args() -> Result<CliResult, lexopt::Error> {
     }
 
     match file {
-        Some(f) => Ok(CliResult::Args(Args {
-            file: f,
-            key,
-            output,
-            strip,
-            set,
-            set_json,
-            recursive,
-            directory,
-            tui,
-        })),
-        None => Err(lexopt::Error::MissingValue {
-            option: Some("file".to_string()),
-        }),
+        Some(f) => Ok(CliResult::Args(Args { file: f, key, output, strip, set, set_json, recursive, directory, tui })),
+        None => Err(lexopt::Error::MissingValue { option: Some("file".to_string()) }),
     }
 }

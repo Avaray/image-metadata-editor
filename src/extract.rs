@@ -15,26 +15,18 @@ pub fn extract(path: &str, parser: &mut MediaParser) -> Result<Output, Box<dyn s
                         if let Some(val) = entry.value() {
                             let dir_name = format!("{:?}", entry.ifd_kind());
                             let tag_name = entry.tag().to_string();
-                            
+
                             let val_str = val.to_string();
-                            let decoded = if val_str.starts_with("0x") {
-                                decode_exif_hex_string(&val_str)
-                            } else {
-                                val_str
-                            };
-                            
-                            out.entry(dir_name)
-                                .or_default()
-                                .insert(tag_name, decoded);
+                            let decoded = if val_str.starts_with("0x") { decode_exif_hex_string(&val_str) } else { val_str };
+
+                            out.entry(dir_name).or_default().insert(tag_name, decoded);
                         }
                     }
                 }
 
                 if let Some(nom_exif::ImageFormatMetadata::Png(chunks)) = meta.format {
                     for (k, v) in chunks.iter() {
-                        out.entry("PngText".to_string())
-                            .or_default()
-                            .insert(k.to_string(), v.to_string());
+                        out.entry("PngText".to_string()).or_default().insert(k.to_string(), v.to_string());
                     }
                 }
             }
@@ -42,9 +34,7 @@ pub fn extract(path: &str, parser: &mut MediaParser) -> Result<Output, Box<dyn s
         nom_exif::MediaKind::Track => {
             if let Ok(track) = parser.parse_track(ms) {
                 for (tag, value) in track.iter() {
-                    out.entry("Track".to_string())
-                        .or_default()
-                        .insert(tag.to_string(), value.to_string());
+                    out.entry("Track".to_string()).or_default().insert(tag.to_string(), value.to_string());
                 }
             }
         }
@@ -58,7 +48,7 @@ fn decode_exif_hex_string(val: &str) -> String {
     if let Ok(bytes) = hex::decode(hex_str) {
         if bytes.len() >= 8 {
             let prefix = &bytes[0..8];
-            
+
             if prefix == b"UNICODE\0" {
                 let utf16_bytes = &bytes[8..];
                 let mut be = true;
@@ -71,7 +61,7 @@ fn decode_exif_hex_string(val: &str) -> String {
                         be = false;
                     }
                 }
-                
+
                 let mut u16s = Vec::with_capacity(utf16_bytes.len() / 2);
                 for chunk in utf16_bytes.chunks_exact(2) {
                     if be {
@@ -86,7 +76,7 @@ fn decode_exif_hex_string(val: &str) -> String {
                 return String::from_utf8_lossy(&bytes[8..]).trim_end_matches('\0').to_string();
             }
         }
-        
+
         // Fallback: try raw UTF-8 in case it's just raw bytes
         if let Ok(s) = String::from_utf8(bytes.clone()) {
             if s.chars().all(|c| !c.is_control() || c.is_ascii_whitespace()) {
@@ -94,6 +84,6 @@ fn decode_exif_hex_string(val: &str) -> String {
             }
         }
     }
-    
+
     val.to_string()
 }

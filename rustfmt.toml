@@ -1,0 +1,33 @@
+# Rust language edition used by the project.
+edition = "2024"
+
+# Rustfmt style edition that defines formatting defaults and behavior.
+style_edition = "2024"
+
+# Maximum width of a formatted source-code line.
+# A wide limit reduces unnecessary line wrapping during AI-assisted edits.
+max_width = 420
+
+# Use the configured maximum width for small expressions and constructs.
+use_small_heuristics = "Max"
+
+# Keep arrays, function calls, method chains, and struct literals on one line
+# when they fit within the configured maximum line width.
+array_width = 420
+attr_fn_like_width = 420
+chain_width = 420
+fn_call_width = 420
+struct_lit_width = 420
+struct_variant_width = 420
+
+# Keep short conditional expressions on a single line when possible.
+single_line_if_else_max_width = 420
+
+# Keep short `let ... else` expressions on a single line when possible.
+single_line_let_else_max_width = 420
+
+# Format Rust code blocks inside documentation comments.
+format_code_in_doc_comments = true
+
+# Maximum width for Rust code blocks inside documentation comments.
+doc_comment_code_block_width = 420

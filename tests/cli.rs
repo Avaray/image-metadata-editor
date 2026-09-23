@@ -26,27 +26,15 @@ fn test_cli_on_fixtures() {
 
     for path in fixtures {
         // Output is always JSON now
-        let assert = Command::cargo_bin("ime")
-            .unwrap()
-            .arg(&path)
-            .assert()
-            .success();
+        let assert = Command::cargo_bin("ime").unwrap().arg(&path).assert().success();
 
-        let json_out: serde_json::Value =
-            serde_json::from_slice(&assert.get_output().stdout).unwrap();
+        let json_out: serde_json::Value = serde_json::from_slice(&assert.get_output().stdout).unwrap();
         assert!(json_out.get("file").is_none());
 
         // Output file
         let temp_dir = tempfile::tempdir().unwrap();
         let out_file = temp_dir.path().join("out.json");
-        Command::cargo_bin("ime")
-            .unwrap()
-            .arg(&path)
-            .arg("-o")
-            .arg(&out_file)
-            .assert()
-            .success()
-            .stdout(predicate::str::is_empty()); // print nothing on success
+        Command::cargo_bin("ime").unwrap().arg(&path).arg("-o").arg(&out_file).assert().success().stdout(predicate::str::is_empty()); // print nothing on success
 
         assert!(out_file.exists());
         let content = fs::read(&out_file).unwrap();
@@ -56,13 +44,7 @@ fn test_cli_on_fixtures() {
 
 #[test]
 fn test_missing_file() {
-    Command::cargo_bin("ime")
-        .unwrap()
-        .arg("does_not_exist.jpg")
-        .assert()
-        .failure()
-        .code(1)
-        .stderr(predicate::str::contains("Error:"));
+    Command::cargo_bin("ime").unwrap().arg("does_not_exist.jpg").assert().failure().code(1).stderr(predicate::str::contains("Error:"));
 }
 
 #[test]
@@ -71,32 +53,17 @@ fn test_unsupported_file() {
     let unsupported = temp_dir.path().join("unsupported.txt");
     fs::write(&unsupported, b"not an image or video").unwrap();
 
-    Command::cargo_bin("ime")
-        .unwrap()
-        .arg(&unsupported)
-        .assert()
-        .failure()
-        .code(1);
+    Command::cargo_bin("ime").unwrap().arg(&unsupported).assert().failure().code(1);
 }
 
 #[test]
 fn test_no_arguments() {
-    Command::cargo_bin("ime")
-        .unwrap()
-        .assert()
-        .failure()
-        .code(2)
-        .stderr(predicate::str::contains("Usage"));
+    Command::cargo_bin("ime").unwrap().assert().failure().code(2).stderr(predicate::str::contains("Usage"));
 }
 
 #[test]
 fn test_help_version() {
-    Command::cargo_bin("ime")
-        .unwrap()
-        .arg("-h")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Usage:"));
+    Command::cargo_bin("ime").unwrap().arg("-h").assert().success().stdout(predicate::str::contains("Usage:"));
     Command::cargo_bin("ime")
         .unwrap()
         .arg("-v")
@@ -125,11 +92,7 @@ fn test_truncated_fixtures() {
 
             let assert = Command::cargo_bin("ime").unwrap().arg(&trunc_path).assert();
             let code = assert.get_output().status.code().unwrap_or(1);
-            assert!(
-                code == 0 || code == 1,
-                "Expected exit code 0 or 1 on truncated file, got {}",
-                code
-            );
+            assert!(code == 0 || code == 1, "Expected exit code 0 or 1 on truncated file, got {}", code);
         }
     }
 }
@@ -142,11 +105,7 @@ fn test_strip() {
     }
 
     for path in fixtures {
-        let ext = path
-            .extension()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_lowercase();
+        let ext = path.extension().unwrap_or_default().to_string_lossy().to_lowercase();
         if ext != "jpg" && ext != "jpeg" && ext != "png" {
             continue;
         }
@@ -156,19 +115,9 @@ fn test_strip() {
         std::fs::copy(&path, &test_file).unwrap();
 
         // run strip inplace
-        Command::cargo_bin("ime")
-            .unwrap()
-            .arg(&test_file)
-            .arg("-s")
-            .assert()
-            .success();
+        Command::cargo_bin("ime").unwrap().arg(&test_file).arg("-s").assert().success();
 
         // read back
-        Command::cargo_bin("ime")
-            .unwrap()
-            .arg(&test_file)
-            .assert()
-            .success()
-            .stdout(predicate::str::contains("{}"));
+        Command::cargo_bin("ime").unwrap().arg(&test_file).assert().success().stdout(predicate::str::contains("{}"));
     }
 }

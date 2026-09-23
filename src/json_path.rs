@@ -71,11 +71,7 @@ fn set_recursive(current: Value, segments: &[String], new_value: Value) -> Value
 
     if let Ok(idx) = segment.parse::<usize>() {
         // Array index
-        let mut arr = if let Value::Array(a) = current {
-            a
-        } else {
-            vec![]
-        };
+        let mut arr = if let Value::Array(a) = current { a } else { vec![] };
         // Grow array if needed
         while arr.len() <= idx {
             arr.push(Value::Null);
@@ -85,11 +81,7 @@ fn set_recursive(current: Value, segments: &[String], new_value: Value) -> Value
         Value::Array(arr)
     } else {
         // Object key
-        let mut obj = if let Value::Object(m) = current {
-            m
-        } else {
-            serde_json::Map::new()
-        };
+        let mut obj = if let Value::Object(m) = current { m } else { serde_json::Map::new() };
         let child = obj.remove(segment).unwrap_or(Value::Null);
         let new_child = set_recursive(child, rest, new_value);
         obj.insert(segment.clone(), new_child);

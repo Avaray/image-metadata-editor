@@ -7,11 +7,7 @@ use std::io::{BufWriter, Read, Seek, Write};
 
 const CRC32: Crc<u32> = Crc::<u32>::new(&CRC_32_ISO_HDLC);
 
-pub fn inject_metadata(
-    path: &str,
-    out_path: Option<&str>,
-    tags: &BTreeMap<String, String>,
-) -> Result<(), String> {
+pub fn inject_metadata(path: &str, out_path: Option<&str>, tags: &BTreeMap<String, String>) -> Result<(), String> {
     let out_path_str = match out_path {
         Some(p) => p.to_string(),
         None => format!("{}.tmp", path),
@@ -68,18 +64,17 @@ pub fn inject_metadata(
             for tag in known_exif_tags {
                 exif.set_tag(tag);
             }
-            let chunk_bytes = exif.as_u8_vec(little_exif::filetype::FileExtension::WEBP)
-                .map_err(|e| format!("Failed to build WebP EXIF: {:?}", e))?;
-            
+            let chunk_bytes = exif.as_u8_vec(little_exif::filetype::FileExtension::WEBP).map_err(|e| format!("Failed to build WebP EXIF: {:?}", e))?;
+
             let mut inp = File::open(path).map_err(|e| e.to_string())?;
             // We read 8 bytes of sig, need to reset to offset 8 for WebP RIFF parser
             // Actually our webp parser expects 4 bytes already read ("RIFF"), so offset 4
             inp.seek(std::io::SeekFrom::Start(4)).map_err(|e| e.to_string())?;
-            
+
             let mut out = BufWriter::new(File::create(&out_path_str).map_err(|e| e.to_string())?);
-            
+
             crate::webp::inject_metadata(&mut inp, &mut out, &chunk_bytes)?;
-            
+
             // Drop handles explicitly
             drop(out);
             drop(inp);
@@ -104,8 +99,7 @@ pub fn inject_metadata(
         let temp_png = format!("{}.png.tmp", out_path_str);
         match inject_png_text(&out_path_str, &temp_png, &unknown) {
             Ok(_) => {
-                std::fs::rename(&temp_png, &out_path_str)
-                    .map_err(|e| format!("Failed to swap png temp file: {}", e))?;
+                std::fs::rename(&temp_png, &out_path_str).map_err(|e| format!("Failed to swap png temp file: {}", e))?;
             }
             Err(e) => {
                 std::fs::remove_file(&temp_png).ok();
@@ -117,8 +111,7 @@ pub fn inject_metadata(
 
     // Finalize: if in-place, rename temp over original
     if out_path.is_none() {
-        std::fs::rename(&out_path_str, path)
-            .map_err(|e| format!("Failed to overwrite original file: {}", e))?;
+        std::fs::rename(&out_path_str, path).map_err(|e| format!("Failed to overwrite original file: {}", e))?;
     }
 
     Ok(())
@@ -139,11 +132,7 @@ fn parse_known_exif_tag(key: &str, value: &str) -> Option<ExifTag> {
     }
 }
 
-fn inject_png_text(
-    in_path: &str,
-    out_path: &str,
-    tags: &BTreeMap<String, String>,
-) -> Result<(), String> {
+fn inject_png_text(in_path: &str, out_path: &str, tags: &BTreeMap<String, String>) -> Result<(), String> {
     let mut inp = File::open(in_path).map_err(|e| e.to_string())?;
     let mut out = BufWriter::new(File::create(out_path).map_err(|e| e.to_string())?);
 
@@ -190,11 +179,7 @@ fn inject_png_text(
             && let Some(new_value) = tags.get(chunk_key)
         {
             // Replace this chunk with the new value
-            let k_trunc = if chunk_key.len() > 79 {
-                &chunk_key[..79]
-            } else {
-                chunk_key
-            };
+            let k_trunc = if chunk_key.len() > 79 { &chunk_key[..79] } else { chunk_key };
             write_text_chunk(&mut out, k_trunc, new_value).map_err(|e| e.to_string())?;
             written.insert(chunk_key.to_string());
             if &type_buf == b"IEND" {

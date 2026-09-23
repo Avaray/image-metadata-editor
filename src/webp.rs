@@ -36,12 +36,12 @@ pub fn strip_metadata(inp: &mut File, out: &mut BufWriter<File>) -> Result<(), S
             out.write_all(&chunk_header).map_err(|e| e.to_string())?;
             let mut vp8x_data = vec![0u8; padded_size as usize];
             inp.read_exact(&mut vp8x_data).map_err(|e| e.to_string())?;
-            
+
             // VP8X flags are in the first byte
             // bit 3 (0x08) = EXIF, bit 2 (0x04) = XMP
             vp8x_data[0] &= !0x08;
             vp8x_data[0] &= !0x04;
-            
+
             out.write_all(&vp8x_data).map_err(|e| e.to_string())?;
             total_written += 8 + padded_size;
         } else {
@@ -103,10 +103,10 @@ pub fn inject_metadata(inp: &mut File, out: &mut BufWriter<File>, exif_chunk: &[
             out.write_all(&chunk_header).map_err(|e| e.to_string())?;
             let mut vp8x_data = vec![0u8; padded_size as usize];
             inp.read_exact(&mut vp8x_data).map_err(|e| e.to_string())?;
-            
+
             // Set EXIF flag (bit 3)
             vp8x_data[0] |= 0x08;
-            
+
             out.write_all(&vp8x_data).map_err(|e| e.to_string())?;
             total_written += 8 + padded_size;
         } else {
@@ -132,7 +132,7 @@ pub fn inject_metadata(inp: &mut File, out: &mut BufWriter<File>, exif_chunk: &[
     if let Some(exif_data) = pending_exif {
         out.write_all(exif_data).map_err(|e| e.to_string())?;
         total_written += exif_data.len() as u32;
-        
+
         // Pad if needed
         if exif_data.len() % 2 != 0 {
             out.write_all(&[0]).map_err(|e| e.to_string())?;
