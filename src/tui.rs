@@ -493,9 +493,15 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                                 app.should_quit = true;
                             }
                             KeyCode::Backspace | KeyCode::Esc => {
-                                if matches!(app.focus, Focus::Metadata) && !app.json_path.is_empty() {
-                                    app.json_path.pop();
-                                    app.reload_meta_view();
+                                if matches!(app.focus, Focus::Metadata) {
+                                    if !app.json_path.is_empty() {
+                                        app.json_path.pop();
+                                        app.reload_meta_view();
+                                    } else if !app.search_query.is_empty() {
+                                        // Clear active search filter
+                                        app.search_query.clear();
+                                        app.apply_search_filter();
+                                    }
                                 }
                             }
                             KeyCode::Char('q') => {
@@ -636,15 +642,13 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                                     }
                                 }
                             }
-                            KeyCode::Char('/') => {
+                            KeyCode::Char('/') | KeyCode::Char('f')
+                                if key.modifiers.contains(KeyModifiers::CONTROL)
+                                    || key.code == KeyCode::Char('/')
+                                        && !key.modifiers.contains(KeyModifiers::CONTROL) =>
+                            {
                                 if matches!(app.focus, Focus::Metadata) {
-                                    if key.modifiers.contains(KeyModifiers::CONTROL) {
-                                        // Ctrl+/ clears the active filter immediately
-                                        app.search_query.clear();
-                                        app.apply_search_filter();
-                                    } else {
-                                        app.state = AppState::Searching;
-                                    }
+                                    app.state = AppState::Searching;
                                 }
                             }
                             _ => {}
@@ -868,11 +872,11 @@ fn ui(f: &mut Frame, app: &mut App) {
     let help_text = match app.state {
         AppState::Normal => {
             let back = if !app.json_path.is_empty() { " | [←/Backspace] Back Up" } else { "" };
-            let search_hint = if !app.search_query.is_empty() { " | [Ctrl+/] Clear filter" } else { "" };
+            let search_hint = if !app.search_query.is_empty() { " | [Esc] Clear filter" } else { "" };
             if !app.pending_edits.is_empty() {
                 format!(" [Tab] Focus | [←/→/↑/↓] Navigate | [e/Enter] Edit/Open{}{} | [s] Strip | [r] Refresh | [Ctrl+S] Save | [q] Quit ", back, search_hint)
             } else {
-                format!(" [Tab] Focus | [←/→/↑/↓] Navigate | [e/Enter] Edit/Open | [/] Search{}{} | [s] Strip | [r] Refresh | [q] Quit ", back, search_hint)
+                format!(" [Tab] Focus | [←/→/↑/↓] Navigate | [e/Enter] Edit/Open | [/ Ctrl+F] Search{}{} | [s] Strip | [r] Refresh | [q] Quit ", back, search_hint)
             }
         },
         AppState::Searching => " [↑/↓] Navigate results | [Enter] Confirm filter | [Esc] Clear & exit search ".to_string(),
