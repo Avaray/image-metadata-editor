@@ -42,6 +42,7 @@ ime <file> [OPTIONS]
 | `--strip` | `-s` | Remove all metadata from the file (JPEG & PNG only) |
 | `--tui` | `-t` | Launch the Interactive Terminal UI (TUI) Mode |
 | `--set Key=Value` | | Inject a metadata tag; repeatable (JPEG & PNG only) |
+| `--set-json <JSON>` | | Inject multiple tags at once from a JSON string |
 | `--key <path>` | `-k` | Extract a single value using a dot-notation path |
 | `--dir` | `-d` | Explicitly indicate the input is a directory (optional) |
 | `--recursive` | `-r` | Recursively process subdirectories when a directory is provided |
