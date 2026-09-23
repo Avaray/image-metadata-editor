@@ -7,10 +7,10 @@ use crossterm::{
 };
 use ratatui::{
     backend::{Backend, CrosstermBackend},
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Layout, Rect, Alignment},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
+    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
     Frame, Terminal,
 };
 use std::collections::BTreeMap;
@@ -74,12 +74,11 @@ struct App {
     files: Vec<PathBuf>,
     file_state: ListState,
     
-    // Metadata for the currently selected file
-    current_metadata: Option<BTreeMap<String, String>>, // Flattened for display/editing
+    current_metadata: Option<BTreeMap<String, String>>,
     meta_state: ListState,
     meta_keys: Vec<String>,
 
-    pending_edits: BTreeMap<String, String>, // edits for the CURRENT file
+    pending_edits: BTreeMap<String, String>,
     
     focus: Focus,
     state: AppState,
@@ -112,7 +111,6 @@ impl App {
         
         app.load_files()?;
         
-        // Select initial file if provided
         if let Some(f) = initial_file {
             if let Some(idx) = app.files.iter().position(|p| p == &f) {
                 app.file_state.select(Some(idx));
@@ -143,7 +141,7 @@ impl App {
     fn load_selected_metadata(&mut self) {
         self.current_metadata = None;
         self.meta_keys.clear();
-        self.pending_edits.clear(); // discard edits if we switch files without saving
+        self.pending_edits.clear();
         self.meta_state.select(None);
 
         if let Some(idx) = self.file_state.selected() {
@@ -152,7 +150,6 @@ impl App {
                 let mut parser = nom_exif::MediaParser::new();
                 if let Ok(metadata) = extract::extract(&path_str, &mut parser) {
                     let mut flat = BTreeMap::new();
-                    // Flatten Group.Tag
                     for (group, tags) in metadata.iter() {
                         for (tag, val) in tags {
                             flat.insert(format!("{}.{}", group, tag), val.clone());
@@ -262,17 +259,43 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                                     app.should_quit = true;
                                 }
                             }
+                            KeyCode::Char('r') => {
+                                let _ = app.load_files();
+                                app.load_selected_metadata();
+                            }
                             KeyCode::Tab => {
                                 app.focus = match app.focus {
                                     Focus::FileList => Focus::Metadata,
                                     Focus::Metadata => Focus::FileList,
                                 };
                             }
-                            KeyCode::Down | KeyCode::Char('j') => match app.focus {
+                            KeyCode::Enter => {
+                                match app.focus {
+                                    Focus::FileList => {
+                                        app.focus = Focus::Metadata;
+                                    }
+                                    Focus::Metadata => {
+                                        // Edit metadata just like 'e'
+                                        if let Some(idx) = app.meta_state.selected() {
+                                            if let Some(tag) = app.meta_keys.get(idx).cloned() {
+                                                let current_val = app.pending_edits.get(&tag)
+                                                    .or_else(|| app.current_metadata.as_ref().and_then(|m| m.get(&tag)))
+                                                    .cloned()
+                                                    .unwrap_or_default();
+                                                app.state = AppState::Editing {
+                                                    tag,
+                                                    input: InputState::new(current_val),
+                                                };
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            KeyCode::Down => match app.focus {
                                 Focus::FileList => app.next_file(),
                                 Focus::Metadata => app.next_meta(),
                             },
-                            KeyCode::Up | KeyCode::Char('k') => match app.focus {
+                            KeyCode::Up => match app.focus {
                                 Focus::FileList => app.previous_file(),
                                 Focus::Metadata => app.previous_meta(),
                             },
@@ -431,14 +454,19 @@ fn ui(f: &mut Frame, app: &mut App) {
     let help_text = match app.state {
         AppState::Normal => {
             if !app.pending_edits.is_empty() {
-                " [Tab] Focus | [j/k] Move | [e] Edit | [s] Strip | [Ctrl+S] Save | [q] Quit "
+                " [Tab] Focus | [↑/↓] Move | [e/Enter] Edit | [s] Strip | [r] Refresh | [Ctrl+S] Save | [q] Quit "
             } else {
-                " [Tab] Focus | [j/k] Move | [e] Edit | [s] Strip | [q] Quit "
+                " [Tab] Focus | [↑/↓] Move | [e/Enter] Edit | [s] Strip | [r] Refresh | [q] Quit "
             }
         },
         AppState::Editing { .. } => " [Enter] Save edit | [Esc] Cancel ",
-        AppState::ConfirmExit => " You have unsaved edits! Save before exit? (y)es / (n)o / (c)ancel ",
+        AppState::ConfirmExit => " You have unsaved edits! Save before exit? ",
     };
+
+    let bottom_layout = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Min(0), Constraint::Length(20)].as_ref())
+        .split(chunks[1]);
 
     let p = Paragraph::new(help_text)
         .block(Block::default().borders(Borders::ALL))
@@ -446,24 +474,52 @@ fn ui(f: &mut Frame, app: &mut App) {
             AppState::ConfirmExit => Style::default().fg(Color::Red),
             _ => Style::default(),
         });
-    f.render_widget(p, chunks[1]);
+    f.render_widget(p, bottom_layout[0]);
+
+    let version_text = format!(" {} ", env!("CARGO_PKG_VERSION"));
+    let version_p = Paragraph::new(Line::from(Span::styled(version_text, Style::default().fg(Color::DarkGray))))
+        .block(Block::default().borders(Borders::ALL))
+        .alignment(Alignment::Right);
+    f.render_widget(version_p, bottom_layout[1]);
 
     // ── Floating Dialogs ──
     match &app.state {
         AppState::Editing { tag, input } => {
-            let area = centered_rect(60, 20, f.area());
-            f.render_widget(Clear, area); // clear background
+            let area = centered_rect(80, 60, f.area());
+            f.render_widget(Clear, area);
             
             let block = Block::default()
                 .title(format!(" Edit: {} ", tag))
                 .borders(Borders::ALL)
                 .style(Style::default().fg(Color::Green));
             
-            let p = Paragraph::new(input.value.as_str())
-                .block(block);
+            // Build the text cursor visually using Spans
+            let chars: Vec<char> = input.value.chars().collect();
+            let mut before = String::new();
+            let mut cursor_char = " ".to_string();
+            let mut after = String::new();
+
+            for (i, &c) in chars.iter().enumerate() {
+                if i < input.cursor {
+                    before.push(c);
+                } else if i == input.cursor {
+                    cursor_char = c.to_string();
+                } else {
+                    after.push(c);
+                }
+            }
+
+            let text = Line::from(vec![
+                Span::raw(before),
+                Span::styled(cursor_char, Style::default().bg(Color::White).fg(Color::Black)),
+                Span::raw(after),
+            ]);
+
+            let p = Paragraph::new(text)
+                .block(block)
+                .wrap(Wrap { trim: false });
             
             f.render_widget(p, area);
-            f.set_cursor_position(ratatui::layout::Position { x: area.x + 1 + input.cursor as u16, y: area.y + 1 });
         }
         AppState::ConfirmExit => {
             let area = centered_rect(40, 20, f.area());
@@ -474,7 +530,7 @@ fn ui(f: &mut Frame, app: &mut App) {
                 .borders(Borders::ALL)
                 .style(Style::default().fg(Color::Red));
             
-            let p = Paragraph::new("\nSave changes before exiting?\n\n [y] Yes\n [n] No\n [c] Cancel")
+            let p = Paragraph::new("\nSave changes before exiting?\n\n[y] Yes    [n] No    [c] Cancel")
                 .block(block)
                 .alignment(ratatui::layout::Alignment::Center);
             

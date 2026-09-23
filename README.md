@@ -146,8 +146,8 @@ ime ./photos --tui
 
 **Features:**
 - **Split-screen layout**: Browse files on the left, view their live metadata on the right.
-- **Vim-like navigation**: Use `Up`/`Down` or `j`/`k` to navigate, and `Tab` to switch focus between the file list and the metadata list.
-- **Direct Editing**: Press `e` while focusing a metadata tag to edit its value directly in a popup. 
+- **Keyboard navigation**: Use `Up`/`Down` arrows to navigate, and `Tab` or `Enter` to switch focus between the file list and the metadata list.
+- **Direct Editing**: Press `e` or `Enter` while focusing a metadata tag to edit its value directly in a popup. 
 - **Bulk Strip**: Press `s` to quickly strip all metadata from the highlighted file.
 - **Safety first**: If you press `q` (or `Esc`) to exit while you have unsaved edits in memory, `ime` will prompt you to save your changes (`nano`-style).
 
