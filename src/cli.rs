@@ -7,6 +7,8 @@ pub struct Args {
     pub strip: bool,
     pub set: std::collections::BTreeMap<String, String>,
     pub set_json: Option<String>,
+    pub recursive: bool,
+    pub directory: bool,
 }
 
 pub enum CliResult {
@@ -23,11 +25,19 @@ pub fn parse_args() -> Result<CliResult, lexopt::Error> {
     let mut strip = false;
     let mut set = std::collections::BTreeMap::new();
     let mut set_json = None;
+    let mut recursive = false;
+    let mut directory = false;
 
     while let Some(arg) = parser.next()? {
         match arg {
             Arg::Short('s') | Arg::Long("strip") => {
                 strip = true;
+            }
+            Arg::Short('r') | Arg::Long("recursive") => {
+                recursive = true;
+            }
+            Arg::Short('d') | Arg::Long("dir") | Arg::Long("directory") => {
+                directory = true;
             }
             Arg::Long("set") => {
                 let val = parser.value()?.to_string_lossy().into_owned();
@@ -70,6 +80,8 @@ pub fn parse_args() -> Result<CliResult, lexopt::Error> {
             strip,
             set,
             set_json,
+            recursive,
+            directory,
         })),
         None => Err(lexopt::Error::MissingValue {
             option: Some("file".to_string()),

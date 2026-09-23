@@ -47,83 +47,112 @@ fn run() -> Result<(), AppError> {
             Ok(())
         }
         CliResult::Args(args) => {
-            let has_inject = !args.set.is_empty() || args.set_json.is_some();
-
-            // ── Step 1: strip (optional) ──────────────────────────────────────────
-            // When chaining strip+inject we strip to a temp file, then inject from it.
-            // When strip only, we strip directly to the final destination.
-            let strip_temp: Option<String> = if args.strip && has_inject {
-                let t = format!("{}.strip_tmp", args.file);
-                strip::strip_metadata(&args.file, Some(&t))
-                    .map_err(|e| AppError::Runtime(e.to_string()))?;
-                Some(t)
-            } else if args.strip {
-                strip::strip_metadata(&args.file, args.output.as_deref())
-                    .map_err(|e| AppError::Runtime(e.to_string()))?;
-                return Ok(());
+            let meta = std::fs::metadata(&args.file).map_err(|e| AppError::Runtime(format!("Failed to read file info: {}", e)))?;
+            
+            if meta.is_dir() {
+                if args.output.is_some() {
+                    return Err(AppError::Usage("Cannot use --output when processing a directory. Processing is done in-place.".to_string()));
+                }
+                
+                let max_depth = if args.recursive { usize::MAX } else { 1 };
+                
+                for entry in walkdir::WalkDir::new(&args.file).max_depth(max_depth).into_iter().filter_map(|e| e.ok()) {
+                    let path = entry.path();
+                    if path.is_file() {
+                        let path_str = path.to_string_lossy();
+                        match process_file(&path_str, &args) {
+                            Ok(_) => println!("Processed: {}", path_str),
+                            Err(e) => eprintln!("Error processing {}: {}", path_str, e),
+                        }
+                    }
+                }
+                Ok(())
             } else {
-                None
-            };
-
-            // The effective source for inject/read is either the stripped temp or the original.
-            let source = strip_temp.as_deref().unwrap_or(&args.file);
-
-            // ── Step 2: inject (optional) ─────────────────────────────────────────
-            if has_inject {
-                let mut parser = nom_exif::MediaParser::new();
-
-                let flat_tags =
-                    build_inject_tags(source, &args.set, args.set_json.as_deref(), &mut parser)
-                        .map_err(AppError::Runtime)?;
-
-                let dest = if strip_temp.is_some() && args.output.is_none() {
-                    // strip produced a temp; inject should write back to the original file
-                    Some(args.file.as_str())
-                } else {
-                    args.output.as_deref()
-                };
-
-                inject::inject_metadata(source, dest, &flat_tags)
-                    .map_err(|e| AppError::Runtime(e.to_string()))?;
-
-                // Clean up strip temp (inject already wrote the final file)
-                if let Some(ref t) = strip_temp {
-                    std::fs::remove_file(t).ok();
-                }
-
-                return Ok(());
+                process_file(&args.file, &args)
             }
-
-            // ── Step 3: read / query ──────────────────────────────────────────────
-            let mut parser = nom_exif::MediaParser::new();
-            let metadata = extract::extract(source, &mut parser)
-                .map_err(|e| AppError::Runtime(e.to_string()))?;
-
-            if let Some(key_path) = &args.key {
-                let root: serde_json::Value = serde_json::to_value(&metadata)
-                    .map_err(|e| AppError::Runtime(e.to_string()))?;
-                match json_path::extract(root, key_path) {
-                    Some(serde_json::Value::String(s)) => println!("{}", s),
-                    Some(other) => {
-                        let pretty = serde_json::to_string_pretty(&other)
-                            .map_err(|e| AppError::Runtime(e.to_string()))?;
-                        println!("{}", pretty);
-                    }
-                    None => {
-                        return Err(AppError::Runtime(format!(
-                            "Key '{}' not found in metadata",
-                            key_path
-                        )));
-                    }
-                }
-                return Ok(());
-            }
-
-            output::write_output(&metadata, args.output.as_deref())
-                .map_err(|e| AppError::Runtime(e.to_string()))?;
-            Ok(())
         }
     }
+}
+
+fn process_file(file: &str, args: &cli::Args) -> Result<(), AppError> {
+    let has_inject = !args.set.is_empty() || args.set_json.is_some();
+
+    // ── Step 1: strip (optional) ──────────────────────────────────────────
+    let strip_temp: Option<String> = if args.strip && has_inject {
+        let t = format!("{}.strip_tmp", file);
+        strip::strip_metadata(file, Some(&t))
+            .map_err(|e| AppError::Runtime(e.to_string()))?;
+        Some(t)
+    } else if args.strip {
+        strip::strip_metadata(file, args.output.as_deref())
+            .map_err(|e| AppError::Runtime(e.to_string()))?;
+        return Ok(());
+    } else {
+        None
+    };
+
+    let source = strip_temp.as_deref().unwrap_or(file);
+
+    // ── Step 2: inject (optional) ─────────────────────────────────────────
+    if has_inject {
+        let mut parser = nom_exif::MediaParser::new();
+        let flat_tags =
+            build_inject_tags(source, &args.set, args.set_json.as_deref(), &mut parser)
+                .map_err(AppError::Runtime)?;
+
+        let dest = if strip_temp.is_some() && args.output.is_none() {
+            Some(file)
+        } else {
+            args.output.as_deref()
+        };
+
+        inject::inject_metadata(source, dest, &flat_tags)
+            .map_err(|e| AppError::Runtime(e.to_string()))?;
+
+        if let Some(ref t) = strip_temp {
+            std::fs::remove_file(t).ok();
+        }
+
+        return Ok(());
+    }
+
+    // ── Step 3: read / query ──────────────────────────────────────────────
+    let mut parser = nom_exif::MediaParser::new();
+    let metadata = extract::extract(source, &mut parser)
+        .map_err(|e| AppError::Runtime(format!("{}: {}", file, e)))?;
+
+    if let Some(key_path) = &args.key {
+        let root: serde_json::Value = serde_json::to_value(&metadata)
+            .map_err(|e| AppError::Runtime(e.to_string()))?;
+        match json_path::extract(root, key_path) {
+            Some(serde_json::Value::String(s)) => println!("{}", s),
+            Some(other) => {
+                let pretty = serde_json::to_string_pretty(&other)
+                    .map_err(|e| AppError::Runtime(e.to_string()))?;
+                println!("{}", pretty);
+            }
+            None => {
+                return Err(AppError::Runtime(format!(
+                    "Key '{}' not found in metadata",
+                    key_path
+                )));
+            }
+        }
+        return Ok(());
+    }
+
+    if !args.directory {
+        output::write_output(&metadata, args.output.as_deref())
+            .map_err(|e| AppError::Runtime(e.to_string()))?;
+    } else {
+         // Outputting JSON for every file in a directory without a specific format can be messy,
+         // but if the user wants it, we write to stdout.
+         // Or skip writing raw json for batch? Let's just output.
+         output::write_output(&metadata, args.output.as_deref())
+            .map_err(|e| AppError::Runtime(e.to_string()))?;
+    }
+    
+    Ok(())
 }
 
 /// Resolve all inject inputs (flat --set, nested --set .path=v, --set-json) into a single
