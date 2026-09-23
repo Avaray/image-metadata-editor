@@ -924,6 +924,9 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                         KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
                             app.state = AppState::Normal;
                         }
+                        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            app.should_quit = true;
+                        }
                         _ => {}
                     },
                     AppState::ConfirmDelete { tag } => match key.code {
@@ -936,17 +939,26 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                         KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
                             app.state = AppState::Normal;
                         }
+                        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            app.should_quit = true;
+                        }
                         _ => {}
                     },
                     AppState::ConfirmExit => match key.code {
                         KeyCode::Char('y') | KeyCode::Char('Y') => {
-                            let _ = app.save_pending_edits();
-                            app.should_quit = true;
+                            if let Err(_) = app.save_pending_edits() {
+                                app.state = AppState::Normal;
+                            } else {
+                                app.should_quit = true;
+                            }
                         }
                         KeyCode::Char('n') | KeyCode::Char('N') => {
                             app.should_quit = true;
                         }
-                        KeyCode::Char('c') | KeyCode::Char('C') | KeyCode::Esc => {
+                        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            app.should_quit = true;
+                        }
+                        KeyCode::Char('c') | KeyCode::Char('C') | KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
                             app.state = AppState::Normal;
                         }
                         _ => {}
@@ -1036,7 +1048,7 @@ fn ui(f: &mut Frame, app: &mut App) {
                 let search_hint = if !app.search_query.is_empty() { " | [Esc] Clear filter" } else { "" };
                 let save_hint = if app.has_pending_changes() { " | [Ctrl+S] Save" } else { "" };
                 let del_hint = if !app.pending_deletes.is_empty() { format!(" | {} pending delete(s)", app.pending_deletes.len()) } else { String::new() };
-                format!(" [Tab] Focus | [←/→/↑/↓] Navigate | [e/Enter] Edit/Open | [c] Copy | [d] Delete | [/ Ctrl+F] Search{back}{search_hint}{del_hint}{save_hint} | [s] Strip | [r] Refresh | [q] Quit ")
+                format!(" [Tab] Focus | [←/→/↑/↓] Navigate | [e/Enter] Edit | [c] Copy | [d] Delete | [/] Search{back}{search_hint}{del_hint}{save_hint} | [s] Strip | [r] Refresh | [q] Quit ")
             }
         }
         AppState::Searching => " [↑/↓] Navigate results | [Enter] Confirm filter | [Esc] Clear & exit search ".to_string(),
@@ -1053,7 +1065,7 @@ fn ui(f: &mut Frame, app: &mut App) {
         AppState::ConfirmExit => " You have unsaved changes! Save before exit? ".to_string(),
     };
 
-    let version_text = if app.power_user { format!(" 🧬 🧨 ime v{} ", env!("CARGO_PKG_VERSION")) } else { format!(" 🧬 ime v{} ", env!("CARGO_PKG_VERSION")) };
+    let version_text = if app.power_user { format!(" 🧨 🧬 ime v{} ", env!("CARGO_PKG_VERSION")) } else { format!(" 🧬 ime v{} ", env!("CARGO_PKG_VERSION")) };
     // Use display width (each emoji = 2 terminal columns) for correct layout sizing
     let version_width = version_text.chars().fold(0u16, |acc, c| acc + if (c as u32) > 0x7F { 2 } else { 1 }) + 2;
 
