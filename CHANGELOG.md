@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-09-23
+
+### Added
+- **Add New Tag dialog (`e` on empty list)**: Press `e` in the Metadata panel when no items are visible (empty metadata, after stripping, or all results filtered out) to open a two-field dialog for adding a new tag. Tab / Enter switches between the Tag Name and Value fields.
+- **`Ctrl+F` to activate search**: Alternative shortcut for `/` to enter search/filter mode.
+- **`🧬` emoji** in the version label at the bottom-right corner.
+
+### Fixed
+- **NaN/Infinity in ComfyUI JSON**: Some PNG files saved by ComfyUI contain `"is_changed": NaN` — a legal JavaScript value but invalid JSON. `serde_json` rejected it, preventing drill-down into `PngText.prompt` keys. A new `sanitize_json()` state-machine replaces bare `NaN`, `Infinity`, and `-Infinity` with `null` before parsing, without touching values inside strings.
+- **`Ctrl+/` shortcut removed**: `Ctrl+/` is not reliably delivered by most terminal emulators. Replaced with `Esc` (in Normal mode, clears the active filter before falling back to backing out of JSON levels).
+
 ## [1.2.0] - 2026-09-23
 
 ### Added
