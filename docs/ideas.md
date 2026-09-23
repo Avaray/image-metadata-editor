@@ -32,5 +32,4 @@ image-metadata-editor/
 While the current TUI is fully functional, here are ideas for future enhancements:
 
 - **Mouse Support**: Allow clicking on the file list to switch files, or clicking on a metadata row to start editing it instantly. This was temporarily deferred to keep the initial TUI scope small, as managing scroll offsets manually for click targeting in `ratatui` requires a bit of state management overhead.
-- **Search & Filter**: Add a search bar (`/`) to quickly filter the metadata list for specific keys or values (especially useful for images with hundreds of EXIF tags).
 - **Batch Editing**: Allow selecting multiple files in the file tree (e.g., with `Space`) and injecting/stripping metadata from all of them at once directly from the TUI.
