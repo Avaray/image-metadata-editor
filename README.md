@@ -26,6 +26,7 @@ ime <file> [OPTIONS]
 |------|-------|-------------|
 | `--output <path>` | `-o` | Write result (or modified file) to `<path>` instead of stdout / in-place |
 | `--strip` | `-s` | Remove all metadata from the file (JPEG & PNG only) |
+| `--tui` | `-t` | Launch the Interactive Terminal UI (TUI) Mode |
 | `--set Key=Value` | | Inject a metadata tag; repeatable (JPEG & PNG only) |
 | `--key <path>` | `-k` | Extract a single value using a dot-notation path |
 | `--dir` | `-d` | Explicitly indicate the input is a directory (optional) |
@@ -134,6 +135,21 @@ ime image.png --set "prompt=a cat sitting on a roof" --set "negative_prompt=blur
 # Inject multiple tags from a JSON object
 ime image.png --set-json '{"prompt":"a cat","steps":30,"cfg":7}'
 ```
+
+## Interactive TUI Mode
+
+`ime` includes a built-in Interactive Terminal UI (TUI) for browsing and editing metadata visually without leaving your terminal.
+
+```bash
+ime ./photos --tui
+```
+
+**Features:**
+- **Split-screen layout**: Browse files on the left, view their live metadata on the right.
+- **Vim-like navigation**: Use `Up`/`Down` or `j`/`k` to navigate, and `Tab` to switch focus between the file list and the metadata list.
+- **Direct Editing**: Press `e` while focusing a metadata tag to edit its value directly in a popup. 
+- **Bulk Strip**: Press `s` to quickly strip all metadata from the highlighted file.
+- **Safety first**: If you press `q` (or `Esc`) to exit while you have unsaved edits in memory, `ime` will prompt you to save your changes (`nano`-style).
 
 ## Batch Processing
 
