@@ -56,6 +56,26 @@ impl InputState {
             self.cursor += 1;
         }
     }
+
+    fn move_word_left(&mut self) {
+        if self.cursor == 0 { return; }
+        let chars: Vec<char> = self.value.chars().collect();
+        let mut i = self.cursor - 1;
+        while i > 0 && chars[i].is_whitespace() { i -= 1; }
+        while i > 0 && !chars[i].is_whitespace() { i -= 1; }
+        if i > 0 || chars[i].is_whitespace() { i += 1; }
+        self.cursor = i;
+    }
+
+    fn move_word_right(&mut self) {
+        let chars: Vec<char> = self.value.chars().collect();
+        let len = chars.len();
+        if self.cursor >= len { return; }
+        let mut i = self.cursor;
+        while i < len && !chars[i].is_whitespace() { i += 1; }
+        while i < len && chars[i].is_whitespace() { i += 1; }
+        self.cursor = i;
+    }
 }
 
 enum Focus {
@@ -252,6 +272,9 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                 match &mut app.state {
                     AppState::Normal => {
                         match key.code {
+                            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                app.should_quit = true;
+                            }
                             KeyCode::Char('q') | KeyCode::Esc => {
                                 if !app.pending_edits.is_empty() {
                                     app.state = AppState::ConfirmExit;
@@ -275,7 +298,6 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                                         app.focus = Focus::Metadata;
                                     }
                                     Focus::Metadata => {
-                                        // Edit metadata just like 'e'
                                         if let Some(idx) = app.meta_state.selected() {
                                             if let Some(tag) = app.meta_keys.get(idx).cloned() {
                                                 let current_val = app.pending_edits.get(&tag)
@@ -299,11 +321,36 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                                 Focus::FileList => app.previous_file(),
                                 Focus::Metadata => app.previous_meta(),
                             },
+                            KeyCode::Home => match app.focus {
+                                Focus::FileList => {
+                                    app.file_state.select(Some(0));
+                                    app.load_selected_metadata();
+                                }
+                                Focus::Metadata => {
+                                    if !app.meta_keys.is_empty() {
+                                        app.meta_state.select(Some(0));
+                                    }
+                                }
+                            },
+                            KeyCode::End => match app.focus {
+                                Focus::FileList => {
+                                    let len = app.files.len();
+                                    if len > 0 {
+                                        app.file_state.select(Some(len - 1));
+                                        app.load_selected_metadata();
+                                    }
+                                }
+                                Focus::Metadata => {
+                                    let len = app.meta_keys.len();
+                                    if len > 0 {
+                                        app.meta_state.select(Some(len - 1));
+                                    }
+                                }
+                            },
                             KeyCode::Char('s') => {
                                 if key.modifiers.contains(KeyModifiers::CONTROL) {
                                     let _ = app.save_pending_edits();
                                 } else {
-                                    // Strip
                                     if let Some(idx) = app.file_state.selected() {
                                         if let Some(path) = app.files.get(idx) {
                                             let _ = crate::strip::strip_metadata(&path.to_string_lossy(), None);
@@ -333,6 +380,9 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                     }
                     AppState::Editing { tag, input } => {
                         match key.code {
+                            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                app.state = AppState::Normal;
+                            }
                             KeyCode::Enter => {
                                 let val = input.value.clone();
                                 let tag_clone = tag.clone();
@@ -346,10 +396,18 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                                 input.remove();
                             }
                             KeyCode::Left => {
-                                input.move_cursor_left();
+                                if key.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) {
+                                    input.move_word_left();
+                                } else {
+                                    input.move_cursor_left();
+                                }
                             }
                             KeyCode::Right => {
-                                input.move_cursor_right();
+                                if key.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) {
+                                    input.move_word_right();
+                                } else {
+                                    input.move_cursor_right();
+                                }
                             }
                             KeyCode::Char(c) => {
                                 input.insert(c);
@@ -476,8 +534,8 @@ fn ui(f: &mut Frame, app: &mut App) {
         });
     f.render_widget(p, bottom_layout[0]);
 
-    let version_text = format!(" {} ", env!("CARGO_PKG_VERSION"));
-    let version_p = Paragraph::new(Line::from(Span::styled(version_text, Style::default().fg(Color::DarkGray))))
+    let version_text = format!(" ime v{} ", env!("CARGO_PKG_VERSION"));
+    let version_p = Paragraph::new(Line::from(Span::raw(version_text)))
         .block(Block::default().borders(Borders::ALL))
         .alignment(Alignment::Right);
     f.render_widget(version_p, bottom_layout[1]);
