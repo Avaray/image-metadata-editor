@@ -181,8 +181,7 @@ ime ./photos --set Copyright="© 2025 John Doe" -r
 
 | Category | Formats | Read | Write |
 |----------|---------|------|-------|
-| Image | JPEG, PNG | ✅ | ✅ |
-| Image | WebP | ✅ | ✅ |
+| Image | JPEG, PNG, WebP | ✅ | ✅ |
 | Image | HEIC/HEIF, AVIF, TIFF, CR3, RAF, IIQ | ✅ | ❌ |
 | Video | MP4, MOV, 3GP, MKV, WebM | ✅ | ❌ |
 

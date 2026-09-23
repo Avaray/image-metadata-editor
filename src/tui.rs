@@ -189,7 +189,7 @@ impl App {
                 let path = entry.path();
                 if path.is_file() {
                     if let Some(ext) = path.extension().and_then(|e| e.to_str()).map(|s| s.to_lowercase()) {
-                        if matches!(ext.as_str(), "jpg" | "jpeg" | "png" | "webp") {
+                        if matches!(ext.as_str(), "jpg" | "jpeg" | "png" | "webp" | "heic" | "heif" | "avif" | "tiff" | "tif" | "cr3" | "raf" | "iiq" | "mp4" | "mov" | "3gp" | "mkv" | "webm") {
                             self.files.push(path);
                         }
                     }
@@ -432,31 +432,55 @@ impl App {
     }
 
     fn save_pending_edits(&mut self) -> Result<(), String> {
+        let res = (|| -> Result<(), String> {
+            if let Some(idx) = self.file_state.selected() {
+                if let Some(path) = self.files.get(idx) {
+                    let path_str = path.to_string_lossy().into_owned();
+
+                    // Apply edits first
+                    if !self.pending_edits.is_empty() {
+                        let mut stripped_keys = BTreeMap::new();
+                        for (k, v) in &self.pending_edits {
+                            let short_k = if let Some((_, tag)) = k.split_once('.') { tag } else { k };
+                            stripped_keys.insert(short_k.to_string(), v.clone());
+                        }
+                        inject::inject_metadata(&path_str, None, &stripped_keys)?;
+                    }
+
+                    // Apply deletes
+                    if !self.pending_deletes.is_empty() {
+                        let keys: Vec<String> = self.pending_deletes.iter().cloned().collect();
+                        inject::delete_metadata_keys(&path_str, None, &keys)?;
+                    }
+                }
+            }
+            Ok(())
+        })();
+
+        match res {
+            Ok(_) => {
+                self.pending_edits.clear();
+                self.pending_deletes.clear();
+                self.load_selected_metadata();
+                self.status_msg = Some("Saved successfully!".to_string());
+                Ok(())
+            }
+            Err(e) => {
+                self.status_msg = Some(format!("Save error: {}", e));
+                Err(e)
+            }
+        }
+    }
+
+    fn is_read_only(&self) -> bool {
         if let Some(idx) = self.file_state.selected() {
             if let Some(path) = self.files.get(idx) {
-                let path_str = path.to_string_lossy().into_owned();
-
-                // Apply edits first
-                if !self.pending_edits.is_empty() {
-                    let mut stripped_keys = BTreeMap::new();
-                    for (k, v) in &self.pending_edits {
-                        let short_k = if let Some((_, tag)) = k.split_once('.') { tag } else { k };
-                        stripped_keys.insert(short_k.to_string(), v.clone());
-                    }
-                    inject::inject_metadata(&path_str, None, &stripped_keys)?;
-                }
-
-                // Apply deletes
-                if !self.pending_deletes.is_empty() {
-                    let keys: Vec<String> = self.pending_deletes.iter().cloned().collect();
-                    inject::delete_metadata_keys(&path_str, None, &keys)?;
+                if let Some(ext) = path.extension().and_then(|e| e.to_str()).map(|s| s.to_lowercase()) {
+                    return !matches!(ext.as_str(), "jpg" | "jpeg" | "png" | "webp");
                 }
             }
         }
-        self.pending_edits.clear();
-        self.pending_deletes.clear();
-        self.load_selected_metadata();
-        Ok(())
+        false
     }
 }
 
@@ -700,10 +724,14 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                                             if is_drillable_json(&val) {
                                                 app.json_path.push(tag);
                                                 app.reload_meta_view();
+                                            } else if app.is_read_only() {
+                                                app.status_msg = Some("Cannot edit read-only file format".to_string());
                                             } else {
                                                 app.state = AppState::Editing { tag, input: InputState::new(val) };
                                             }
                                         }
+                                    } else if app.is_read_only() {
+                                        app.status_msg = Some("Cannot edit read-only file format".to_string());
                                     } else {
                                         app.state = AppState::AddingTag { key: InputState::default(), value: InputState::default(), focus_value: false };
                                     }
@@ -747,7 +775,9 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                                 if key.modifiers.contains(KeyModifiers::CONTROL) {
                                     let _ = app.save_pending_edits();
                                 } else {
-                                    if app.power_user {
+                                    if app.is_read_only() {
+                                        app.status_msg = Some("Cannot edit read-only file format".to_string());
+                                    } else if app.power_user {
                                         if let Some(idx) = app.file_state.selected() {
                                             if let Some(path) = app.files.get(idx) {
                                                 let _ = crate::strip::strip_metadata(&path.to_string_lossy(), None);
@@ -761,7 +791,9 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                             }
                             KeyCode::Char('e') => {
                                 if matches!(app.focus, Focus::Metadata) {
-                                    if let Some(idx) = app.meta_state.selected() {
+                                    if app.is_read_only() {
+                                        app.status_msg = Some("Cannot edit read-only file format".to_string());
+                                    } else if let Some(idx) = app.meta_state.selected() {
                                         if let Some(tag) = app.meta_keys.get(idx).cloned() {
                                             let val = app.meta_values.get(&tag).cloned().unwrap_or_default();
                                             app.state = AppState::Editing { tag, input: InputState::new(val) };
@@ -788,7 +820,9 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                             }
                             KeyCode::Char('d') => {
                                 if matches!(app.focus, Focus::Metadata) {
-                                    if let Some(idx) = app.meta_state.selected() {
+                                    if app.is_read_only() {
+                                        app.status_msg = Some("Cannot edit read-only file format".to_string());
+                                    } else if let Some(idx) = app.meta_state.selected() {
                                         if let Some(tag) = app.meta_keys.get(idx).cloned() {
                                             if app.power_user {
                                                 app.pending_deletes.insert(tag);
@@ -1039,16 +1073,27 @@ fn ui(f: &mut Frame, app: &mut App) {
     // ── Right: Metadata ──
     let meta_title = {
         let base = if app.json_path.is_empty() { " Metadata".to_string() } else { format!(" Metadata > {}", app.json_path.join(" > ")) };
-        let search_part = if !app.search_query.is_empty() {
+
+        let mut spans = vec![Span::raw(base)];
+
+        if app.is_read_only() {
+            spans.push(Span::styled(" [READ ONLY]", Style::default().add_modifier(Modifier::DIM)));
+        }
+
+        if !app.search_query.is_empty() {
             let count = app.meta_keys.len();
-            format!(" / {}█ ({}) ", app.search_query, count)
+            spans.push(Span::raw(format!(" / {}█ ({}) ", app.search_query, count)));
         } else if matches!(app.state, AppState::Searching) {
-            " / █ ".to_string()
+            spans.push(Span::raw(" / █ "));
+        }
+
+        if !app.pending_edits.is_empty() {
+            spans.push(Span::raw(" (UNSAVED EDITS) "));
         } else {
-            String::new()
-        };
-        let edit_part = if !app.pending_edits.is_empty() { " (UNSAVED EDITS)" } else { "" };
-        format!("{}{}{} ", base, search_part, edit_part)
+            spans.push(Span::raw(" "));
+        }
+
+        ratatui::text::Line::from(spans)
     };
 
     let mut meta_block = Block::default().borders(Borders::ALL).title(meta_title);
