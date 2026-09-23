@@ -6,6 +6,7 @@ mod json_path;
 mod model;
 mod output;
 mod strip;
+mod webp;
 
 use cli::CliResult;
 use error::AppError;

@@ -3,7 +3,7 @@ use little_exif::exif_tag::ExifTag;
 use little_exif::metadata::Metadata;
 use std::collections::BTreeMap;
 use std::fs::File;
-use std::io::{BufWriter, Read, Write};
+use std::io::{BufWriter, Read, Seek, Write};
 
 const CRC32: Crc<u32> = Crc::<u32>::new(&CRC_32_ISO_HDLC);
 
@@ -32,10 +32,11 @@ pub fn inject_metadata(
 
     let is_jpeg = sig[0..2] == [0xFF, 0xD8];
     let is_png = sig == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+    let is_webp = sig[0..4] == *b"RIFF";
 
-    if !is_jpeg && !is_png {
+    if !is_jpeg && !is_png && !is_webp {
         std::fs::remove_file(&out_path_str).ok();
-        return Err("Injecting metadata is currently unsupported for this format (only JPEG and PNG are supported).".into());
+        return Err("Injecting metadata is currently unsupported for this format (only JPEG, PNG, and WebP are supported).".into());
     }
 
     // Split tags into known EXIF and unknown
@@ -51,29 +52,51 @@ pub fn inject_metadata(
         }
     }
 
-    // For JPEG: pack unknown tags into UserComment as JSON
-    if is_jpeg
+    // For JPEG/WebP: pack unknown tags into UserComment as JSON
+    if (is_jpeg || is_webp)
         && !unknown.is_empty()
         && let Ok(json) = serde_json::to_string(&unknown)
     {
         known_exif_tags.push(ExifTag::UserComment(json.into_bytes()));
     }
 
-    // Write EXIF (known + unknown-packed): read existing, merge, write back
+    // Write EXIF
     if !known_exif_tags.is_empty() {
-        // Read existing metadata so we don't lose it
-        let out_p = std::path::Path::new(&out_path_str);
-        let mut exif = Metadata::new_from_path(out_p).unwrap_or_else(|_| Metadata::new());
+        if is_webp {
+            // For WebP, little_exif gives us the full RIFF chunk bytes which we can inject
+            let mut exif = Metadata::new();
+            for tag in known_exif_tags {
+                exif.set_tag(tag);
+            }
+            let chunk_bytes = exif.as_u8_vec(little_exif::filetype::FileExtension::WEBP)
+                .map_err(|e| format!("Failed to build WebP EXIF: {:?}", e))?;
+            
+            let mut inp = File::open(path).map_err(|e| e.to_string())?;
+            // We read 8 bytes of sig, need to reset to offset 8 for WebP RIFF parser
+            // Actually our webp parser expects 4 bytes already read ("RIFF"), so offset 4
+            inp.seek(std::io::SeekFrom::Start(4)).map_err(|e| e.to_string())?;
+            
+            let mut out = BufWriter::new(File::create(&out_path_str).map_err(|e| e.to_string())?);
+            
+            crate::webp::inject_metadata(&mut inp, &mut out, &chunk_bytes)?;
+            
+            // Drop handles explicitly
+            drop(out);
+            drop(inp);
+        } else {
+            // For JPEG/PNG we use little_exif's built-in file writing
+            let out_p = std::path::Path::new(&out_path_str);
+            let mut exif = Metadata::new_from_path(out_p).unwrap_or_else(|_| Metadata::new());
 
-        // Merge new tags on top (set_tag replaces if already present)
-        for tag in known_exif_tags {
-            exif.set_tag(tag);
+            for tag in known_exif_tags {
+                exif.set_tag(tag);
+            }
+
+            exif.write_to_file(out_p).map_err(|e| {
+                std::fs::remove_file(&out_path_str).ok();
+                format!("Failed to write EXIF: {:?}", e)
+            })?;
         }
-
-        exif.write_to_file(out_p).map_err(|e| {
-            std::fs::remove_file(&out_path_str).ok();
-            format!("Failed to write EXIF: {:?}", e)
-        })?;
     }
 
     // If PNG and we have unknown tags, inject tEXt chunks

@@ -23,8 +23,10 @@ pub fn strip_metadata(path: &str, out_path: Option<&str>) -> Result<(), String> 
         strip_jpeg(&mut inp, &mut out, &sig[0..2])
     } else if sig == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] {
         strip_png(&mut inp, &mut out, &sig)
+    } else if sig[0..4] == *b"RIFF" {
+        crate::webp::strip_metadata(&mut inp, &mut out)
     } else {
-        Err("Stripping metadata is currently unsupported for this format (only JPEG and PNG are supported).".into())
+        Err("Stripping metadata is currently unsupported for this format (only JPEG, PNG, and WebP are supported).".into())
     };
 
     // Drop file handles explicitly
