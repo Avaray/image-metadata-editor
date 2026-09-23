@@ -142,6 +142,10 @@ struct App {
     should_quit: bool,
     power_user: bool,
     explorer_mode: bool,
+    /// Remember the previously selected directory when entering a subdirectory
+    last_selected_dir: Option<PathBuf>,
+    /// True when at the virtual root showing all drives (above C:\, D:\, etc.)
+    at_virtual_root: bool,
 }
 
 impl App {
@@ -167,6 +171,8 @@ impl App {
             should_quit: false,
             power_user,
             explorer_mode,
+            last_selected_dir: None,
+            at_virtual_root: false,
         };
 
         app.load_files()?;
@@ -188,7 +194,19 @@ impl App {
         self.files.clear();
 
         if self.explorer_mode {
-            if let Some(parent) = self.current_dir.parent() {
+            if self.at_virtual_root {
+                // At virtual root - show all drives/roots as folders.
+                // current_dir is a dummy empty path here; skip read_dir below.
+                for root in get_roots() {
+                    self.files.push(root);
+                }
+                // Sort drives and return early — no read_dir needed.
+                self.files.sort_by(|a, b| a.cmp(b));
+                return Ok(());
+            } else if self.is_at_drive_root() {
+                // At a drive root (e.g., C:\) - show ".." to go up to virtual root.
+                self.files.push(self.current_dir.join(".."));
+            } else if let Some(parent) = self.current_dir.parent() {
                 if !parent.as_os_str().is_empty() {
                     self.files.push(self.current_dir.join(".."));
                 }
@@ -213,13 +231,21 @@ impl App {
         self.files.sort_by(|a, b| {
             let a_is_dotdot = a.file_name().unwrap_or_default() == "..";
             let b_is_dotdot = b.file_name().unwrap_or_default() == "..";
-            if a_is_dotdot && !b_is_dotdot {
+            let a_is_root = a.file_name().map_or(false, |n| is_root_marker(n));
+            let b_is_root = b.file_name().map_or(false, |n| is_root_marker(n));
+
+            // Root markers (drives) come first
+            if a_is_root && !b_is_root {
+                std::cmp::Ordering::Less
+            } else if !a_is_root && b_is_root {
+                std::cmp::Ordering::Greater
+            } else if a_is_dotdot && !b_is_dotdot {
                 std::cmp::Ordering::Less
             } else if !a_is_dotdot && b_is_dotdot {
                 std::cmp::Ordering::Greater
             } else {
-                let a_is_dir = a.is_dir() || a_is_dotdot;
-                let b_is_dir = b.is_dir() || b_is_dotdot;
+                let a_is_dir = a.is_dir() || a_is_dotdot || a_is_root;
+                let b_is_dir = b.is_dir() || b_is_dotdot || b_is_root;
                 if a_is_dir && !b_is_dir {
                     std::cmp::Ordering::Less
                 } else if !a_is_dir && b_is_dir {
@@ -230,6 +256,78 @@ impl App {
             }
         });
         Ok(())
+    }
+
+    /// Check if current_dir is at a drive root (e.g., C:\ on Windows, / on Unix)
+    fn is_at_drive_root(&self) -> bool {
+        #[cfg(windows)]
+        {
+            // On Windows C:\ has a Prefix component + RootDir = 2 components total.
+            // The simplest reliable check is the trailing backslash on a single-letter drive.
+            let s = self.current_dir.to_string_lossy();
+            s.len() == 3 && s.chars().nth(0).map_or(false, |c| c.is_ascii_alphabetic()) && s.chars().nth(1) == Some(':') && (s.chars().nth(2) == Some('\\') || s.chars().nth(2) == Some('/'))
+        }
+        #[cfg(not(windows))]
+        {
+            // On Unix, root is /
+            self.current_dir == PathBuf::from("/")
+        }
+    }
+
+    /// Returns true if the given path is the virtual `..` entry (go-up sentinel).
+    fn path_is_dotdot(path: &PathBuf) -> bool {
+        path.file_name().map(|n| n == "..").unwrap_or(false)
+    }
+
+    /// Navigate one level up (mirrors the `..` action). Works on both platforms.
+    fn navigate_up(&mut self) {
+        if self.at_virtual_root {
+            // Already at the top — nothing to do.
+            return;
+        }
+        if self.is_at_drive_root() {
+            // Go up from a drive root to the virtual root (drive list).
+            self.at_virtual_root = true;
+            self.current_dir = PathBuf::from(""); // dummy — not used while at_virtual_root
+            let _ = self.load_files();
+            self.file_state.select(if self.files.is_empty() { None } else { Some(0) });
+            self.load_selected_metadata();
+        } else if let Some(parent) = self.current_dir.parent() {
+            let previous_dir_name = self.current_dir.file_name().and_then(|n| n.to_str()).map(|s| s.to_string());
+            self.current_dir = parent.to_path_buf();
+            let _ = self.load_files();
+            // Try to restore selection to the directory we just came from.
+            let mut selected_idx = if self.files.is_empty() { None } else { Some(0) };
+            if let Some(dir_name) = previous_dir_name {
+                if let Some(idx) = self.files.iter().position(|p| p.file_name().and_then(|n| n.to_str()) == Some(&dir_name)) {
+                    selected_idx = Some(idx);
+                }
+            }
+            self.file_state.select(selected_idx);
+            self.load_selected_metadata();
+            self.last_selected_dir = None;
+        }
+    }
+
+    /// Navigate into a directory or drive. `path` must be a real directory, not `..`.
+    fn navigate_into(&mut self, path: PathBuf) {
+        let fname = path.file_name().unwrap_or_default().to_os_string();
+        if self.at_virtual_root {
+            // Entering a drive from the virtual root list.
+            self.at_virtual_root = false;
+            self.current_dir = path;
+            let _ = self.load_files();
+            self.file_state.select(if self.files.is_empty() { None } else { Some(0) });
+            self.load_selected_metadata();
+        } else if path != self.current_dir {
+            if !is_root_marker(&fname) {
+                self.last_selected_dir = Some(fname.into());
+            }
+            self.current_dir = path;
+            let _ = self.load_files();
+            self.file_state.select(if self.files.is_empty() { None } else { Some(0) });
+            self.load_selected_metadata();
+        }
     }
 
     fn load_selected_metadata(&mut self) {
@@ -554,6 +652,41 @@ fn get_json_at_path_mut<'a>(val: &'a mut serde_json::Value, path: &[String]) -> 
     Some(curr)
 }
 
+/// Returns a list of root paths (drives on Windows, / on Unix)
+fn get_roots() -> Vec<PathBuf> {
+    #[cfg(windows)]
+    {
+        // On Windows, check all drive letters A: through Z:
+        (b'A'..=b'Z')
+            .filter_map(|letter| {
+                let drive = format!("{}:\\", letter as char);
+                let path = PathBuf::from(&drive);
+                if path.exists() { Some(path) } else { None }
+            })
+            .collect()
+    }
+    #[cfg(not(windows))]
+    {
+        // On Unix/Linux, root is /
+        vec![PathBuf::from("/")]
+    }
+}
+
+/// Check if a filename is a root marker (drive letter or /)
+fn is_root_marker(name: &std::ffi::OsStr) -> bool {
+    let s = name.to_string_lossy();
+    #[cfg(windows)]
+    {
+        // Windows drive format: "C:" (file_name of "C:\" returns "C:")
+        s.len() >= 2 && s.chars().nth(1) == Some(':') && s.chars().nth(0).map_or(false, |c| c.is_ascii_alphabetic())
+    }
+    #[cfg(not(windows))]
+    {
+        // Unix root
+        s == "/"
+    }
+}
+
 /// Replaces bare `NaN`, `Infinity`, `-Infinity` (invalid JSON but legal in JS/ComfyUI)
 /// with `null` so serde_json can parse the resulting string. Only replaces tokens
 /// that appear outside of JSON strings (respects `\"` escape sequences).
@@ -723,7 +856,12 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                                 };
                             }
                             KeyCode::Left => match app.focus {
-                                Focus::FileList => {}
+                                Focus::FileList => {
+                                    if app.explorer_mode {
+                                        // Left always navigates up one level in explorer mode.
+                                        app.navigate_up();
+                                    }
+                                }
                                 Focus::Metadata => {
                                     if !app.json_path.is_empty() {
                                         app.json_path.pop();
@@ -735,7 +873,22 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                             },
                             KeyCode::Right => match app.focus {
                                 Focus::FileList => {
-                                    app.focus = Focus::Metadata;
+                                    if app.explorer_mode {
+                                        if let Some(idx) = app.file_state.selected() {
+                                            if let Some(path) = app.files.get(idx).cloned() {
+                                                if App::path_is_dotdot(&path) {
+                                                    // ".." entry — Right does nothing; use Left or Enter to go up.
+                                                } else if path.is_dir() || is_root_marker(path.file_name().unwrap_or_default()) {
+                                                    app.navigate_into(path);
+                                                } else {
+                                                    // Regular file — move focus to metadata panel.
+                                                    app.focus = Focus::Metadata;
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        app.focus = Focus::Metadata;
+                                    }
                                 }
                                 Focus::Metadata => {
                                     if let Some(idx) = app.meta_state.selected() {
@@ -754,15 +907,13 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                                     if app.explorer_mode {
                                         if let Some(idx) = app.file_state.selected() {
                                             if let Some(path) = app.files.get(idx).cloned() {
-                                                if path.is_dir() || path.file_name().unwrap_or_default() == ".." {
-                                                    let new_dir = if path.file_name().unwrap_or_default() == ".." { app.current_dir.parent().unwrap_or(&app.current_dir).to_path_buf() } else { path };
-                                                    if new_dir != app.current_dir {
-                                                        app.current_dir = new_dir;
-                                                        let _ = app.load_files();
-                                                        app.file_state.select(if app.files.is_empty() { None } else { Some(0) });
-                                                        app.load_selected_metadata();
-                                                        continue;
-                                                    }
+                                                if App::path_is_dotdot(&path) {
+                                                    // ".." sentinel — go up.
+                                                    app.navigate_up();
+                                                    continue;
+                                                } else if path.is_dir() || is_root_marker(path.file_name().unwrap_or_default()) {
+                                                    app.navigate_into(path);
+                                                    continue;
                                                 }
                                             }
                                         }
@@ -1099,22 +1250,58 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
 }
 
 fn ui(f: &mut Frame, app: &mut App) {
-    let chunks = Layout::default().direction(Direction::Vertical).constraints([Constraint::Min(0), Constraint::Length(3)].as_ref()).split(f.area());
+    // In explorer mode, reserve space for the path bar at the top
+    let top_bar_height = if app.explorer_mode { 3 } else { 0 };
+    let vertical_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(top_bar_height), // Top path bar (only in explorer mode)
+            Constraint::Min(0),                 // Main content
+            Constraint::Length(3),              // Bottom help bar
+        ])
+        .split(f.area());
 
-    let top_chunks = Layout::default().direction(Direction::Horizontal).constraints([Constraint::Percentage(30), Constraint::Percentage(70)].as_ref()).split(chunks[0]);
+    let main_area = vertical_chunks[1];
+    let bottom_area = vertical_chunks[2];
+
+    // ── Top: Path Bar (Explorer Mode) ──
+    if app.explorer_mode {
+        let path_display = if app.at_virtual_root {
+            #[cfg(windows)]
+            {
+                "This PC".to_string()
+            }
+            #[cfg(not(windows))]
+            {
+                "Computer".to_string()
+            }
+        } else {
+            app.current_dir.to_string_lossy().into_owned()
+        };
+        let path_bar = Paragraph::new(path_display).block(Block::default().borders(Borders::ALL).title(" Path ")).style(Style::default().fg(Color::Cyan));
+        f.render_widget(path_bar, vertical_chunks[0]);
+    }
+
+    let top_chunks = Layout::default().direction(Direction::Horizontal).constraints([Constraint::Percentage(30), Constraint::Percentage(70)].as_ref()).split(main_area);
 
     // ── Left: File List ──
     let files: Vec<ListItem> = app
         .files
         .iter()
         .map(|p| {
-            let name = p.file_name().unwrap_or_default().to_string_lossy().into_owned();
+            let fname = p.file_name().unwrap_or_default();
+            let name = if app.explorer_mode && is_root_marker(&fname) {
+                // Show proper drive names (C:\, D:\, etc.) instead of just C:, D:
+                p.to_string_lossy().into_owned()
+            } else {
+                fname.to_string_lossy().into_owned()
+            };
             let mut prefix = "";
             if app.explorer_mode {
                 if name == ".." {
                     prefix = "\u{f060} "; // 
-                } else if p.is_dir() {
-                    prefix = "\u{f07b} "; // 
+                } else if p.is_dir() || is_root_marker(p.file_name().unwrap_or_default()) {
+                    prefix = "\u{f07b} "; //  (folder icon for directories and roots)
                 } else if let Some(ext) = p.extension().and_then(|e| e.to_str()).map(|s| s.to_lowercase()) {
                     if matches!(ext.as_str(), "jpg" | "jpeg" | "png" | "webp" | "heic" | "heif" | "avif" | "tiff" | "tif" | "cr3" | "raf" | "iiq") {
                         prefix = "\u{f1c5} "; // 
@@ -1227,7 +1414,7 @@ fn ui(f: &mut Frame, app: &mut App) {
     // Use display width (each emoji = 2 terminal columns) for correct layout sizing
     let version_width = version_text.chars().fold(0u16, |acc, c| acc + if (c as u32) > 0x7F { 2 } else { 1 }) + 2;
 
-    let bottom_layout = Layout::default().direction(Direction::Horizontal).constraints([Constraint::Min(0), Constraint::Length(version_width)].as_ref()).split(chunks[1]);
+    let bottom_layout = Layout::default().direction(Direction::Horizontal).constraints([Constraint::Min(0), Constraint::Length(version_width)].as_ref()).split(bottom_area);
 
     let p = Paragraph::new(help_text).block(Block::default().borders(Borders::ALL)).style(match app.state {
         AppState::ConfirmExit | AppState::ConfirmStrip => Style::default().fg(Color::Red),
