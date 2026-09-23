@@ -18,7 +18,7 @@ use std::process;
 fn run() -> Result<(), AppError> {
     match cli::parse_args().map_err(|e| AppError::Usage(e.to_string()))? {
         CliResult::Help => {
-            println!("Usage: ime <file> [-o <path>] [-s] [--set K=V] [--set-json <json>] [-k <path>]");
+            println!("Usage: ime <file> [-o <path>] [-s] [--set K=V] [--set-json <json>] [-k <path>] [--delete KEY]");
             println!("Options:");
             println!("  -o, --output <path>   write result (or modified file) to <path>; default: stdout / in-place");
             println!("  -s, --strip           strip all metadata (JPEG & PNG only)");
@@ -27,6 +27,8 @@ fn run() -> Result<(), AppError> {
             println!("                        nested:  --set .workflow.nodes[0].type=KSampler");
             println!("      --set-json <json> merge a JSON object into metadata");
             println!("                        each top-level key becomes a tag; existing tags are preserved");
+            println!("      --delete KEY      delete a specific metadata key; can be repeated");
+            println!("                        e.g. --delete PngText.prompt  --delete Exif.GPSLatitude");
             println!("  -k, --key <path>      extract a single value using dot-notation");
             println!("                        e.g. -k Exif.Model  or  -k PngText.workflow.nodes[0].type");
             println!("                        string values that contain JSON are traversed automatically");
@@ -72,6 +74,17 @@ fn run() -> Result<(), AppError> {
 
 fn process_file(file: &str, args: &cli::Args) -> Result<(), AppError> {
     let has_inject = !args.set.is_empty() || args.set_json.is_some();
+    let has_delete = !args.delete.is_empty();
+
+    // ── Step 0: delete specific keys (optional) ───────────────────────────
+    if has_delete && !args.strip {
+        inject::delete_metadata_keys(file, args.output.as_deref(), &args.delete)
+            .map_err(|e| AppError::Runtime(e.to_string()))?;
+        if !has_inject {
+            return Ok(());
+        }
+    }
+
 
     // ── Step 1: strip (optional) ──────────────────────────────────────────
     let strip_temp: Option<String> = if args.strip && has_inject {

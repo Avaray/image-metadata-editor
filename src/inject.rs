@@ -223,3 +223,142 @@ fn write_text_chunk(out: &mut impl Write, key: &str, value: &str) -> std::io::Re
 
     Ok(())
 }
+
+/// Delete specific metadata keys from a file, in-place (or to `out_path`).
+///
+/// For PNG: removes matching `tEXt` chunks by key name (the part before the `.` in
+/// the flat key, e.g. `"PngText.prompt"` → key `"prompt"`).
+/// For JPEG/WebP: reads all metadata, removes the requested keys, then re-injects.
+pub fn delete_metadata_keys(
+    path: &str,
+    out_path: Option<&str>,
+    keys_to_delete: &[String],
+) -> Result<(), String> {
+    if keys_to_delete.is_empty() {
+        return Ok(());
+    }
+
+    let mut sig = [0u8; 8];
+    {
+        let mut f = File::open(path).map_err(|e| e.to_string())?;
+        f.read(&mut sig).map_err(|e| e.to_string())?;
+    }
+
+    let is_png = sig == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+
+    if is_png {
+        // For PNG we can surgically remove tEXt chunks by key name.
+        // Flat key format: "PngText.prompt" → chunk key "prompt"
+        let chunk_keys: std::collections::HashSet<String> = keys_to_delete
+            .iter()
+            .map(|k| {
+                k.split_once('.')
+                    .map(|(_, tail)| tail.to_string())
+                    .unwrap_or_else(|| k.clone())
+            })
+            .collect();
+
+        let temp = format!("{}.del_tmp", path);
+        delete_png_text_keys(path, &temp, &chunk_keys)?;
+
+        let dest = out_path.unwrap_or(path);
+        std::fs::rename(&temp, dest)
+            .map_err(|e| format!("Failed to write output: {}", e))?;
+    } else {
+        // For JPEG/WebP: read all tags, remove requested ones, strip, re-inject.
+        // We treat the flat key as the tag name (without the group prefix).
+        let delete_short: std::collections::HashSet<String> = keys_to_delete
+            .iter()
+            .map(|k| {
+                k.split_once('.')
+                    .map(|(_, tail)| tail.to_string())
+                    .unwrap_or_else(|| k.clone())
+            })
+            .collect();
+
+        let mut parser = nom_exif::MediaParser::new();
+        let metadata =
+            crate::extract::extract(path, &mut parser).map_err(|e| e.to_string())?;
+
+        let mut remaining: BTreeMap<String, String> = BTreeMap::new();
+        for tags in metadata.values() {
+            for (tag, val) in tags {
+                if !delete_short.contains(tag) {
+                    remaining.insert(tag.clone(), val.clone());
+                }
+            }
+        }
+
+        // Strip then re-inject what remains
+        let temp_stripped = format!("{}.strip_tmp", path);
+        crate::strip::strip_metadata(path, Some(&temp_stripped))
+            .map_err(|e| e.to_string())?;
+
+        let dest = out_path.unwrap_or(path);
+        if remaining.is_empty() {
+            std::fs::rename(&temp_stripped, dest)
+                .map_err(|e| format!("Failed to write output: {}", e))?;
+        } else {
+            inject_metadata(&temp_stripped, Some(dest), &remaining)?;
+            std::fs::remove_file(&temp_stripped).ok();
+        }
+    }
+
+    Ok(())
+}
+
+fn delete_png_text_keys(
+    in_path: &str,
+    out_path: &str,
+    keys: &std::collections::HashSet<String>,
+) -> Result<(), String> {
+    let mut inp = File::open(in_path).map_err(|e| e.to_string())?;
+    let mut out = BufWriter::new(File::create(out_path).map_err(|e| e.to_string())?);
+
+    // Copy PNG signature
+    let mut sig = [0u8; 8];
+    inp.read_exact(&mut sig).map_err(|e| e.to_string())?;
+    out.write_all(&sig).map_err(|e| e.to_string())?;
+
+    loop {
+        let mut len_buf = [0u8; 4];
+        if inp.read_exact(&mut len_buf).is_err() {
+            break;
+        }
+        let length = u32::from_be_bytes(len_buf) as usize;
+
+        let mut type_buf = [0u8; 4];
+        inp.read_exact(&mut type_buf).map_err(|e| e.to_string())?;
+
+        let mut chunk_data = vec![0u8; length];
+        inp.read_exact(&mut chunk_data).map_err(|e| e.to_string())?;
+        let mut crc_buf = [0u8; 4];
+        inp.read_exact(&mut crc_buf).map_err(|e| e.to_string())?;
+
+        // If this is a tEXt chunk whose key is in our delete set → skip it
+        if &type_buf == b"tEXt" {
+            if let Some(nul_pos) = chunk_data.iter().position(|&b| b == 0) {
+                if let Ok(chunk_key) = std::str::from_utf8(&chunk_data[..nul_pos]) {
+                    if keys.contains(chunk_key) {
+                        if &type_buf == b"IEND" {
+                            break;
+                        }
+                        continue; // drop this chunk
+                    }
+                }
+            }
+        }
+
+        // Pass through unchanged
+        out.write_all(&len_buf).map_err(|e| e.to_string())?;
+        out.write_all(&type_buf).map_err(|e| e.to_string())?;
+        out.write_all(&chunk_data).map_err(|e| e.to_string())?;
+        out.write_all(&crc_buf).map_err(|e| e.to_string())?;
+
+        if &type_buf == b"IEND" {
+            break;
+        }
+    }
+
+    Ok(())
+}

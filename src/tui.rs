@@ -102,6 +102,7 @@ enum AppState {
     Searching,
     Editing { tag: String, input: InputState },
     AddingTag { key: InputState, value: InputState, focus_value: bool },
+    ConfirmDelete { tag: String },
     ConfirmExit,
 }
 
@@ -120,6 +121,9 @@ struct App {
     search_query: String,
 
     pending_edits: BTreeMap<String, String>,
+    pending_deletes: std::collections::BTreeSet<String>,
+    /// Brief status message shown in the help bar (e.g. "Copied!" / "Deleted")
+    status_msg: Option<String>,
     json_path: Vec<String>,
 
     focus: Focus,
@@ -131,7 +135,24 @@ impl App {
     fn new(start_path: PathBuf) -> Result<Self, AppError> {
         let (current_dir, initial_file) = if start_path.is_dir() { (start_path.clone(), None) } else { (start_path.parent().unwrap_or_else(|| std::path::Path::new("")).to_path_buf(), Some(start_path.clone())) };
 
-        let mut app = App { current_dir, files: Vec::new(), file_state: ListState::default(), current_metadata: None, meta_state: ListState::default(), meta_keys: Vec::new(), meta_values: BTreeMap::new(), all_meta_keys: Vec::new(), search_query: String::new(), pending_edits: BTreeMap::new(), json_path: Vec::new(), focus: Focus::FileList, state: AppState::Normal, should_quit: false };
+        let mut app = App {
+            current_dir,
+            files: Vec::new(),
+            file_state: ListState::default(),
+            current_metadata: None,
+            meta_state: ListState::default(),
+            meta_keys: Vec::new(),
+            meta_values: BTreeMap::new(),
+            all_meta_keys: Vec::new(),
+            search_query: String::new(),
+            pending_edits: BTreeMap::new(),
+            pending_deletes: std::collections::BTreeSet::new(),
+            status_msg: None,
+            json_path: Vec::new(),
+            focus: Focus::FileList,
+            state: AppState::Normal,
+            should_quit: false,
+        };
 
         app.load_files()?;
 
@@ -165,6 +186,8 @@ impl App {
     fn load_selected_metadata(&mut self) {
         self.current_metadata = None;
         self.pending_edits.clear();
+        self.pending_deletes.clear();
+        self.status_msg = None;
         self.json_path.clear();
         self.search_query.clear();
         self.all_meta_keys.clear();
@@ -195,11 +218,15 @@ impl App {
             let mut keys = std::collections::BTreeSet::new();
             if let Some(m) = &self.current_metadata {
                 for k in m.keys() {
-                    keys.insert(k.clone());
+                    if !self.pending_deletes.contains(k) {
+                        keys.insert(k.clone());
+                    }
                 }
             }
             for k in self.pending_edits.keys() {
-                keys.insert(k.clone());
+                if !self.pending_deletes.contains(k) {
+                    keys.insert(k.clone());
+                }
             }
 
             self.all_meta_keys = keys.into_iter().collect();
@@ -383,22 +410,34 @@ impl App {
         self.meta_state.select(Some(i));
     }
 
+    fn has_pending_changes(&self) -> bool {
+        !self.pending_edits.is_empty() || !self.pending_deletes.is_empty()
+    }
+
     fn save_pending_edits(&mut self) -> Result<(), String> {
-        if self.pending_edits.is_empty() {
-            return Ok(());
-        }
         if let Some(idx) = self.file_state.selected() {
             if let Some(path) = self.files.get(idx) {
-                let path_str = path.to_string_lossy();
-                let mut stripped_keys = BTreeMap::new();
-                for (k, v) in &self.pending_edits {
-                    let short_k = if let Some((_, tag)) = k.split_once('.') { tag } else { k };
-                    stripped_keys.insert(short_k.to_string(), v.clone());
+                let path_str = path.to_string_lossy().into_owned();
+
+                // Apply edits first
+                if !self.pending_edits.is_empty() {
+                    let mut stripped_keys = BTreeMap::new();
+                    for (k, v) in &self.pending_edits {
+                        let short_k = if let Some((_, tag)) = k.split_once('.') { tag } else { k };
+                        stripped_keys.insert(short_k.to_string(), v.clone());
+                    }
+                    inject::inject_metadata(&path_str, None, &stripped_keys)?;
                 }
-                inject::inject_metadata(&path_str, None, &stripped_keys)?;
+
+                // Apply deletes
+                if !self.pending_deletes.is_empty() {
+                    let keys: Vec<String> = self.pending_deletes.iter().cloned().collect();
+                    inject::delete_metadata_keys(&path_str, None, &keys)?;
+                }
             }
         }
         self.pending_edits.clear();
+        self.pending_deletes.clear();
         self.load_selected_metadata();
         Ok(())
     }
@@ -564,6 +603,8 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
 
         if let Event::Key(key) = event::read().map_err(|e| AppError::Runtime(e.to_string()))? {
             if key.kind == event::KeyEventKind::Press {
+                // Dismiss any transient status message on the next keypress
+                app.status_msg = None;
                 match &mut app.state {
                     AppState::Normal => {
                         match key.code {
@@ -583,7 +624,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                                 }
                             }
                             KeyCode::Char('q') => {
-                                if !app.pending_edits.is_empty() {
+                                if app.has_pending_changes() {
                                     app.state = AppState::ConfirmExit;
                                 } else {
                                     app.should_quit = true;
@@ -701,6 +742,28 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                                         // No items visible (empty metadata or all filtered out):
                                         // open the "add new tag" dialog
                                         app.state = AppState::AddingTag { key: InputState::default(), value: InputState::default(), focus_value: false };
+                                    }
+                                }
+                            }
+                            KeyCode::Char('c') => {
+                                if matches!(app.focus, Focus::Metadata) {
+                                    if let Some(idx) = app.meta_state.selected() {
+                                        if let Some(tag) = app.meta_keys.get(idx) {
+                                            let val = app.meta_values.get(tag).cloned().unwrap_or_default();
+                                            match arboard::Clipboard::new().and_then(|mut cb| cb.set_text(val)) {
+                                                Ok(_) => app.status_msg = Some("Copied to clipboard!".to_string()),
+                                                Err(_) => app.status_msg = Some("Clipboard unavailable".to_string()),
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            KeyCode::Char('d') => {
+                                if matches!(app.focus, Focus::Metadata) {
+                                    if let Some(idx) = app.meta_state.selected() {
+                                        if let Some(tag) = app.meta_keys.get(idx).cloned() {
+                                            app.state = AppState::ConfirmDelete { tag };
+                                        }
                                     }
                                 }
                             }
@@ -831,6 +894,18 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                         }
                         _ => {}
                     },
+                    AppState::ConfirmDelete { tag } => match key.code {
+                        KeyCode::Char('y') | KeyCode::Char('Y') => {
+                            let tag_owned = tag.clone();
+                            app.pending_deletes.insert(tag_owned);
+                            app.reload_meta_view();
+                            app.state = AppState::Normal;
+                        }
+                        KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
+                            app.state = AppState::Normal;
+                        }
+                        _ => {}
+                    },
                     AppState::ConfirmExit => match key.code {
                         KeyCode::Char('y') | KeyCode::Char('Y') => {
                             let _ = app.save_pending_edits();
@@ -920,22 +995,29 @@ fn ui(f: &mut Frame, app: &mut App) {
     f.render_stateful_widget(meta_list, top_chunks[1], &mut app.meta_state);
 
     // ── Bottom: Help & Instructions ──
-    let help_text = match app.state {
+    let help_text = match &app.state {
         AppState::Normal => {
-            let back = if !app.json_path.is_empty() { " | [←/Backspace] Back Up" } else { "" };
-            let search_hint = if !app.search_query.is_empty() { " | [Esc] Clear filter" } else { "" };
-            if !app.pending_edits.is_empty() { format!(" [Tab] Focus | [←/→/↑/↓] Navigate | [e/Enter] Edit/Open{}{} | [s] Strip | [r] Refresh | [Ctrl+S] Save | [q] Quit ", back, search_hint) } else { format!(" [Tab] Focus | [←/→/↑/↓] Navigate | [e/Enter] Edit/Open | [/ Ctrl+F] Search{}{} | [s] Strip | [r] Refresh | [q] Quit ", back, search_hint) }
+            if let Some(msg) = &app.status_msg {
+                format!(" {msg} ")
+            } else {
+                let back = if !app.json_path.is_empty() { " | [←/Backspace] Back Up" } else { "" };
+                let search_hint = if !app.search_query.is_empty() { " | [Esc] Clear filter" } else { "" };
+                let save_hint = if app.has_pending_changes() { " | [Ctrl+S] Save" } else { "" };
+                let del_hint = if !app.pending_deletes.is_empty() { format!(" | {} pending delete(s)", app.pending_deletes.len()) } else { String::new() };
+                format!(" [Tab] Focus | [←/→/↑/↓] Navigate | [e/Enter] Edit/Open | [c] Copy | [d] Delete | [/ Ctrl+F] Search{back}{search_hint}{del_hint}{save_hint} | [s] Strip | [r] Refresh | [q] Quit ")
+            }
         }
         AppState::Searching => " [↑/↓] Navigate results | [Enter] Confirm filter | [Esc] Clear & exit search ".to_string(),
         AppState::Editing { .. } => " [Enter] Save edit | [Esc/Ctrl+C] Cancel | [Ctrl+←/→] Jump ".to_string(),
-        AppState::AddingTag { ref focus_value, .. } => {
+        AppState::AddingTag { focus_value, .. } => {
             if *focus_value {
                 " [Enter] Save tag | [Tab] Back to Key | [Esc/Ctrl+C] Cancel ".to_string()
             } else {
                 " [Enter/Tab] Move to Value | [Esc/Ctrl+C] Cancel ".to_string()
             }
         }
-        AppState::ConfirmExit => " You have unsaved edits! Save before exit? ".to_string(),
+        AppState::ConfirmDelete { tag } => format!(" Delete '{tag}'? [y] Yes  [n/Esc] No "),
+        AppState::ConfirmExit => " You have unsaved changes! Save before exit? ".to_string(),
     };
 
     let version_text = format!(" 🧬 ime v{} ", env!("CARGO_PKG_VERSION"));
