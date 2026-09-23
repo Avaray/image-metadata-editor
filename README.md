@@ -14,7 +14,7 @@ cargo install ime
 
 ### Pre-built binaries
 
-Alternatively, you can download a pre-built executable for your operating system from the [Releases](../../releases) page.
+Alternatively, you can download a pre-built executable for your operating system from the [Releases](https://github.com/Avaray/image-metadata-editor/releases/latest) page.
 
 ## Usage
 
@@ -102,8 +102,11 @@ Use `-o` to write to a new file instead (original is left untouched).
 Supported formats: **JPEG**, **PNG**.
 
 ```bash
-ime photo.jpg -s              # in-place
-ime photo.jpg -s -o clean.jpg # write to a new file
+# In-place
+ime photo.jpg -s
+
+# Write to a new file
+ime photo.jpg -s -o clean.jpg
 ```
 
 ## Injecting metadata (`--set`)
