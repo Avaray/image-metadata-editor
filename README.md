@@ -22,13 +22,13 @@ You can run `ime` instantly without installation using `bunx`, or install it glo
 
 ```bash
 # Run instantly without installation using Bun
-bunx ime-cli photo.jpg
+bunx @avaray/ime photo.jpg
 
 # Install globally with NPM
-npm install -g ime-cli
+npm install -g @avaray/ime
 ```
 
-These are just two simple examples. Any well-known package manager should be able to install `ime-cli` globally, and most of them also offer running it without the need for installation.
+These are just two simple examples. Any well-known package manager should be able to install `@avaray/ime` globally, and most of them also offer running it without the need for installation.
 
 ## ⚡️ Usage
 

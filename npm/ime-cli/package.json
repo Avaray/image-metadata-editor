@@ -1,5 +1,5 @@
 {
-  "name": "ime-cli",
+  "name": "@avaray/ime",
   "version": "1.1.0",
   "description": "Blazing fast image metadata (EXIF/WebP) reader and editor.",
   "bin": {
@@ -12,7 +12,7 @@
   "author": "Avaray",
   "license": "MIT",
   "optionalDependencies": {
-    "ime-win32-x64": "1.1.0",
-    "ime-linux-x64": "1.1.0"
+    "@avaray/ime-win32-x64": "1.1.0",
+    "@avaray/ime-linux-x64": "1.1.0"
   }
 }

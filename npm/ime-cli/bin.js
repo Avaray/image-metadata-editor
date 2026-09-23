@@ -7,7 +7,7 @@ const os = require('os');
 // Determine the correct platform package
 const platform = os.platform();
 const arch = os.arch();
-const packageName = `ime-${platform}-${arch}`;
+const packageName = `@avaray/ime-${platform}-${arch}`;
 
 let exePath;
 try {
