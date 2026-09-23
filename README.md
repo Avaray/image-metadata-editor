@@ -1,4 +1,4 @@
-# 🧬 Image Metadata Editor `ime`
+# 🧬 Image Metadata Editor
 
 **ime** is a fast, lightweight, and portable [CLI](https://en.wikipedia.org/wiki/Command-line_interface) written in [Rust](https://rust-lang.org/) for **reading**, **writing**, and completely **wiping** metadata from image files.
 
