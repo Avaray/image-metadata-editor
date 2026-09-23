@@ -87,6 +87,7 @@ enum AppState {
     Normal,
     Searching,
     Editing { tag: String, input: InputState },
+    AddingTag { key: InputState, value: InputState, focus_value: bool },
     ConfirmExit,
 }
 
@@ -446,6 +447,18 @@ fn is_drillable_json(val: &str) -> bool {
     }
 }
 
+fn render_cursor_spans(chars: &[char], cursor: usize) -> (String, String, String) {
+    let mut before = String::new();
+    let mut cursor_char = " ".to_string();
+    let mut after = String::new();
+    for (i, &c) in chars.iter().enumerate() {
+        if i < cursor { before.push(c); }
+        else if i == cursor { cursor_char = c.to_string(); }
+        else { after.push(c); }
+    }
+    (before, cursor_char, after)
+}
+
 pub fn run(path: &str) -> Result<(), AppError> {
     enable_raw_mode().map_err(|e| AppError::Runtime(e.to_string()))?;
     let mut stdout = io::stdout();
@@ -612,12 +625,26 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                                                 input: InputState::new(val),
                                             };
                                         }
+                                    } else {
+                                        // No items visible (empty metadata or all filtered out):
+                                        // open the "add new tag" dialog
+                                        app.state = AppState::AddingTag {
+                                            key: InputState::default(),
+                                            value: InputState::default(),
+                                            focus_value: false,
+                                        };
                                     }
                                 }
                             }
                             KeyCode::Char('/') => {
                                 if matches!(app.focus, Focus::Metadata) {
-                                    app.state = AppState::Searching;
+                                    if key.modifiers.contains(KeyModifiers::CONTROL) {
+                                        // Ctrl+/ clears the active filter immediately
+                                        app.search_query.clear();
+                                        app.apply_search_filter();
+                                    } else {
+                                        app.state = AppState::Searching;
+                                    }
                                 }
                             }
                             _ => {}
@@ -682,6 +709,46 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                             }
                             KeyCode::Char(c) => {
                                 input.insert(c);
+                            }
+                            _ => {}
+                        }
+                    }
+                    AppState::AddingTag { key: key_inp, value: val_inp, focus_value } => {
+                        match key.code {
+                            KeyCode::Esc => {
+                                app.state = AppState::Normal;
+                            }
+                            KeyCode::Tab => {
+                                *focus_value = !*focus_value;
+                            }
+                            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                app.state = AppState::Normal;
+                            }
+                            KeyCode::Enter => {
+                                if !*focus_value {
+                                    *focus_value = true;
+                                } else {
+                                    let k = key_inp.value.trim().to_string();
+                                    let v = val_inp.value.clone();
+                                    if !k.is_empty() {
+                                        let full_key = if k.contains('.') { k.clone() } else { format!("Custom.{}", k) };
+                                        app.pending_edits.insert(full_key, v);
+                                        app.reload_meta_view();
+                                    }
+                                    app.state = AppState::Normal;
+                                }
+                            }
+                            KeyCode::Backspace => {
+                                if *focus_value { val_inp.remove(); } else { key_inp.remove(); }
+                            }
+                            KeyCode::Left => {
+                                if *focus_value { val_inp.move_cursor_left(); } else { key_inp.move_cursor_left(); }
+                            }
+                            KeyCode::Right => {
+                                if *focus_value { val_inp.move_cursor_right(); } else { key_inp.move_cursor_right(); }
+                            }
+                            KeyCode::Char(c) => {
+                                if *focus_value { val_inp.insert(c); } else { key_inp.insert(c); }
                             }
                             _ => {}
                         }
@@ -801,7 +868,7 @@ fn ui(f: &mut Frame, app: &mut App) {
     let help_text = match app.state {
         AppState::Normal => {
             let back = if !app.json_path.is_empty() { " | [←/Backspace] Back Up" } else { "" };
-            let search_hint = if !app.search_query.is_empty() { " | [/] Edit filter | [Esc] Clear" } else { "" };
+            let search_hint = if !app.search_query.is_empty() { " | [Ctrl+/] Clear filter" } else { "" };
             if !app.pending_edits.is_empty() {
                 format!(" [Tab] Focus | [←/→/↑/↓] Navigate | [e/Enter] Edit/Open{}{} | [s] Strip | [r] Refresh | [Ctrl+S] Save | [q] Quit ", back, search_hint)
             } else {
@@ -810,11 +877,21 @@ fn ui(f: &mut Frame, app: &mut App) {
         },
         AppState::Searching => " [↑/↓] Navigate results | [Enter] Confirm filter | [Esc] Clear & exit search ".to_string(),
         AppState::Editing { .. } => " [Enter] Save edit | [Esc/Ctrl+C] Cancel | [Ctrl+←/→] Jump ".to_string(),
+        AppState::AddingTag { ref focus_value, .. } => {
+            if *focus_value {
+                " [Enter] Save tag | [Tab] Back to Key | [Esc/Ctrl+C] Cancel ".to_string()
+            } else {
+                " [Enter/Tab] Move to Value | [Esc/Ctrl+C] Cancel ".to_string()
+            }
+        },
         AppState::ConfirmExit => " You have unsaved edits! Save before exit? ".to_string(),
     };
 
-    let version_text = format!(" ime v{} ", env!("CARGO_PKG_VERSION"));
-    let version_width = version_text.chars().count() as u16 + 2;
+    let version_text = format!(" 🧬 ime v{} ", env!("CARGO_PKG_VERSION"));
+    // Use display width (each emoji = 2 terminal columns) for correct layout sizing
+    let version_width = version_text.chars().fold(0u16, |acc, c| {
+        acc + if (c as u32) > 0x7F { 2 } else { 1 }
+    }) + 2;
 
     let bottom_layout = Layout::default()
         .direction(Direction::Horizontal)
@@ -847,19 +924,7 @@ fn ui(f: &mut Frame, app: &mut App) {
                 .style(Style::default().fg(Color::Green));
             
             let chars: Vec<char> = input.value.chars().collect();
-            let mut before = String::new();
-            let mut cursor_char = " ".to_string();
-            let mut after = String::new();
-
-            for (i, &c) in chars.iter().enumerate() {
-                if i < input.cursor {
-                    before.push(c);
-                } else if i == input.cursor {
-                    cursor_char = c.to_string();
-                } else {
-                    after.push(c);
-                }
-            }
+            let (before, cursor_char, after) = render_cursor_spans(&chars, input.cursor);
 
             let text = Line::from(vec![
                 Span::raw(before),
@@ -872,6 +937,41 @@ fn ui(f: &mut Frame, app: &mut App) {
                 .wrap(Wrap { trim: false });
             
             f.render_widget(p, area);
+        }
+        AppState::AddingTag { key, value, focus_value } => {
+            let area = centered_rect(60, 30, f.area());
+            f.render_widget(Clear, area);
+
+            let popup_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Length(3), Constraint::Length(3), Constraint::Min(0)].as_ref())
+                .split(area.inner(ratatui::layout::Margin { horizontal: 1, vertical: 1 }));
+
+            let outer_block = Block::default()
+                .title(" Add New Tag ")
+                .borders(Borders::ALL)
+                .style(Style::default().fg(Color::Cyan));
+            f.render_widget(outer_block, area);
+
+            // Key field
+            let key_style = if !*focus_value { Style::default().fg(Color::Yellow) } else { Style::default() };
+            let key_block = Block::default().title(" Tag Name ").borders(Borders::ALL).style(key_style);
+            let key_chars: Vec<char> = key.value.chars().collect();
+            let (kb, kc, ka) = render_cursor_spans(&key_chars, key.cursor);
+            let key_p = Paragraph::new(Line::from(vec![
+                Span::raw(kb), Span::styled(kc, Style::default().bg(Color::White).fg(Color::Black)), Span::raw(ka),
+            ])).block(key_block);
+            f.render_widget(key_p, popup_chunks[0]);
+
+            // Value field
+            let val_style = if *focus_value { Style::default().fg(Color::Yellow) } else { Style::default() };
+            let val_block = Block::default().title(" Value ").borders(Borders::ALL).style(val_style);
+            let val_chars: Vec<char> = value.value.chars().collect();
+            let (vb, vc, va) = render_cursor_spans(&val_chars, value.cursor);
+            let val_p = Paragraph::new(Line::from(vec![
+                Span::raw(vb), Span::styled(vc, Style::default().bg(Color::White).fg(Color::Black)), Span::raw(va),
+            ])).block(val_block);
+            f.render_widget(val_p, popup_chunks[1]);
         }
         AppState::ConfirmExit => {
             let area = centered_rect(40, 20, f.area());
