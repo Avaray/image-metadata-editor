@@ -97,8 +97,10 @@ struct App {
     current_metadata: Option<BTreeMap<String, String>>,
     meta_state: ListState,
     meta_keys: Vec<String>,
+    meta_values: BTreeMap<String, String>,
 
     pending_edits: BTreeMap<String, String>,
+    json_path: Vec<String>,
     
     focus: Focus,
     state: AppState,
@@ -123,7 +125,9 @@ impl App {
             current_metadata: None,
             meta_state: ListState::default(),
             meta_keys: Vec::new(),
+            meta_values: BTreeMap::new(),
             pending_edits: BTreeMap::new(),
+            json_path: Vec::new(),
             focus: Focus::FileList,
             state: AppState::Normal,
             should_quit: false,
@@ -160,10 +164,9 @@ impl App {
 
     fn load_selected_metadata(&mut self) {
         self.current_metadata = None;
-        self.meta_keys.clear();
         self.pending_edits.clear();
-        self.meta_state.select(None);
-
+        self.json_path.clear();
+        
         if let Some(idx) = self.file_state.selected() {
             if let Some(path) = self.files.get(idx) {
                 let path_str = path.to_string_lossy();
@@ -175,12 +178,114 @@ impl App {
                             flat.insert(format!("{}.{}", group, tag), val.clone());
                         }
                     }
-                    self.meta_keys = flat.keys().cloned().collect();
                     self.current_metadata = Some(flat);
-                    if !self.meta_keys.is_empty() {
-                        self.meta_state.select(Some(0));
+                }
+            }
+        }
+        self.reload_meta_view();
+    }
+
+    fn reload_meta_view(&mut self) {
+        self.meta_keys.clear();
+        self.meta_values.clear();
+        
+        if self.json_path.is_empty() {
+            let mut keys = std::collections::BTreeSet::new();
+            if let Some(m) = &self.current_metadata {
+                for k in m.keys() { keys.insert(k.clone()); }
+            }
+            for k in self.pending_edits.keys() { keys.insert(k.clone()); }
+            
+            self.meta_keys = keys.into_iter().collect();
+            for k in &self.meta_keys {
+                let val = self.pending_edits.get(k)
+                    .or_else(|| self.current_metadata.as_ref().and_then(|m| m.get(k)))
+                    .cloned()
+                    .unwrap_or_default();
+                self.meta_values.insert(k.clone(), val);
+            }
+        } else {
+            let root_key = &self.json_path[0];
+            let root_val = self.pending_edits.get(root_key)
+                .or_else(|| self.current_metadata.as_ref().and_then(|m| m.get(root_key)))
+                .cloned()
+                .unwrap_or_default();
+            
+            let mut valid = false;
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&root_val) {
+                if let Some(curr) = get_json_at_path(&parsed, &self.json_path[1..]) {
+                    valid = true;
+                    match curr {
+                        serde_json::Value::Object(map) => {
+                            self.meta_keys = map.keys().cloned().collect();
+                            for (k, v) in map {
+                                let display_val = if v.is_string() {
+                                    v.as_str().unwrap().to_string()
+                                } else {
+                                    serde_json::to_string(&v).unwrap_or_default()
+                                };
+                                self.meta_values.insert(k.clone(), display_val);
+                            }
+                        }
+                        serde_json::Value::Array(arr) => {
+                            self.meta_keys = (0..arr.len()).map(|i| i.to_string()).collect();
+                            for (i, v) in arr.iter().enumerate() {
+                                let display_val = if v.is_string() {
+                                    v.as_str().unwrap().to_string()
+                                } else {
+                                    serde_json::to_string(v).unwrap_or_default()
+                                };
+                                self.meta_values.insert(i.to_string(), display_val);
+                            }
+                        }
+                        _ => {}
                     }
                 }
+            }
+            
+            if !valid {
+                self.json_path.clear();
+                return self.reload_meta_view();
+            }
+        }
+        
+        if self.meta_keys.is_empty() {
+            self.meta_state.select(None);
+        } else {
+            let i = self.meta_state.selected().unwrap_or(0);
+            self.meta_state.select(Some(i.min(self.meta_keys.len() - 1)));
+        }
+    }
+
+    fn apply_nested_edit(&mut self, tag: &str, new_val: String) {
+        if self.json_path.is_empty() {
+            self.pending_edits.insert(tag.to_string(), new_val);
+            return;
+        }
+        
+        let root_key = &self.json_path[0];
+        let root_val = self.pending_edits.get(root_key)
+            .or_else(|| self.current_metadata.as_ref().and_then(|m| m.get(root_key)))
+            .cloned()
+            .unwrap_or_default();
+            
+        if let Ok(mut parsed) = serde_json::from_str::<serde_json::Value>(&root_val) {
+            let new_json: serde_json::Value = serde_json::from_str(&new_val).unwrap_or(serde_json::Value::String(new_val));
+            
+            if let Some(parent) = get_json_at_path_mut(&mut parsed, &self.json_path[1..]) {
+                match parent {
+                    serde_json::Value::Object(map) => { map.insert(tag.to_string(), new_json); }
+                    serde_json::Value::Array(arr) => {
+                        if let Ok(idx) = tag.parse::<usize>() {
+                            if idx < arr.len() { arr[idx] = new_json; }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            
+            if let Ok(new_root_str) = serde_json::to_string(&parsed) {
+                self.pending_edits.insert(root_key.clone(), new_root_str);
             }
         }
     }
@@ -242,6 +347,36 @@ impl App {
     }
 }
 
+fn get_json_at_path<'a>(val: &'a serde_json::Value, path: &[String]) -> Option<&'a serde_json::Value> {
+    let mut curr = val;
+    for p in path {
+        match curr {
+            serde_json::Value::Object(map) => { curr = map.get(p)?; }
+            serde_json::Value::Array(arr) => {
+                let idx: usize = p.parse().ok()?;
+                curr = arr.get(idx)?;
+            }
+            _ => return None,
+        }
+    }
+    Some(curr)
+}
+
+fn get_json_at_path_mut<'a>(val: &'a mut serde_json::Value, path: &[String]) -> Option<&'a mut serde_json::Value> {
+    let mut curr = val;
+    for p in path {
+        match curr {
+            serde_json::Value::Object(map) => { curr = map.get_mut(p)?; }
+            serde_json::Value::Array(arr) => {
+                let idx: usize = p.parse().ok()?;
+                curr = arr.get_mut(idx)?;
+            }
+            _ => return None,
+        }
+    }
+    Some(curr)
+}
+
 pub fn run(path: &str) -> Result<(), AppError> {
     enable_raw_mode().map_err(|e| AppError::Runtime(e.to_string()))?;
     let mut stdout = io::stdout();
@@ -275,8 +410,17 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                                 app.should_quit = true;
                             }
+                            KeyCode::Backspace => {
+                                if matches!(app.focus, Focus::Metadata) && !app.json_path.is_empty() {
+                                    app.json_path.pop();
+                                    app.reload_meta_view();
+                                }
+                            }
                             KeyCode::Char('q') | KeyCode::Esc => {
-                                if !app.pending_edits.is_empty() {
+                                if matches!(app.focus, Focus::Metadata) && !app.json_path.is_empty() {
+                                    app.json_path.pop();
+                                    app.reload_meta_view();
+                                } else if !app.pending_edits.is_empty() {
                                     app.state = AppState::ConfirmExit;
                                 } else {
                                     app.should_quit = true;
@@ -300,14 +444,17 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                                     Focus::Metadata => {
                                         if let Some(idx) = app.meta_state.selected() {
                                             if let Some(tag) = app.meta_keys.get(idx).cloned() {
-                                                let current_val = app.pending_edits.get(&tag)
-                                                    .or_else(|| app.current_metadata.as_ref().and_then(|m| m.get(&tag)))
-                                                    .cloned()
-                                                    .unwrap_or_default();
-                                                app.state = AppState::Editing {
-                                                    tag,
-                                                    input: InputState::new(current_val),
-                                                };
+                                                let val = app.meta_values.get(&tag).cloned().unwrap_or_default();
+                                                let is_json = val.trim().starts_with('{') || val.trim().starts_with('[');
+                                                if is_json && serde_json::from_str::<serde_json::Value>(&val).is_ok() {
+                                                    app.json_path.push(tag);
+                                                    app.reload_meta_view();
+                                                } else {
+                                                    app.state = AppState::Editing {
+                                                        tag,
+                                                        input: InputState::new(val),
+                                                    };
+                                                }
                                             }
                                         }
                                     }
@@ -363,13 +510,10 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                                 if matches!(app.focus, Focus::Metadata) {
                                     if let Some(idx) = app.meta_state.selected() {
                                         if let Some(tag) = app.meta_keys.get(idx).cloned() {
-                                            let current_val = app.pending_edits.get(&tag)
-                                                .or_else(|| app.current_metadata.as_ref().and_then(|m| m.get(&tag)))
-                                                .cloned()
-                                                .unwrap_or_default();
+                                            let val = app.meta_values.get(&tag).cloned().unwrap_or_default();
                                             app.state = AppState::Editing {
                                                 tag,
-                                                input: InputState::new(current_val),
+                                                input: InputState::new(val),
                                             };
                                         }
                                     }
@@ -386,7 +530,8 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                             KeyCode::Enter => {
                                 let val = input.value.clone();
                                 let tag_clone = tag.clone();
-                                app.pending_edits.insert(tag_clone, val);
+                                app.apply_nested_edit(&tag_clone, val);
+                                app.reload_meta_view();
                                 app.state = AppState::Normal;
                             }
                             KeyCode::Esc => {
@@ -469,11 +614,14 @@ fn ui(f: &mut Frame, app: &mut App) {
     f.render_stateful_widget(file_list, top_chunks[0], &mut app.file_state);
 
     // ── Right: Metadata ──
-    let mut meta_block = Block::default().borders(Borders::ALL).title(if app.pending_edits.is_empty() {
-        " Metadata "
+    let meta_title = if app.json_path.is_empty() {
+        if app.pending_edits.is_empty() { " Metadata ".to_string() } else { " Metadata (UNSAVED EDITS) ".to_string() }
     } else {
-        " Metadata (UNSAVED EDITS) "
-    });
+        let path = app.json_path.join(" > ");
+        if app.pending_edits.is_empty() { format!(" Metadata > {} ", path) } else { format!(" Metadata > {} (UNSAVED EDITS) ", path) }
+    };
+    
+    let mut meta_block = Block::default().borders(Borders::ALL).title(meta_title);
     
     if matches!(app.focus, Focus::Metadata) {
         meta_block = meta_block.style(Style::default().fg(Color::Yellow));
@@ -482,24 +630,24 @@ fn ui(f: &mut Frame, app: &mut App) {
     }
 
     let mut meta_items = Vec::new();
-    if let Some(m) = &app.current_metadata {
+    if app.meta_keys.is_empty() {
+        meta_items.push(ListItem::new("No metadata or invalid file."));
+    } else {
         for key in &app.meta_keys {
-            let val = app.pending_edits.get(key).or_else(|| m.get(key)).unwrap_or(&String::new()).clone();
+            let val = app.meta_values.get(key).cloned().unwrap_or_default();
+            let is_edited = app.pending_edits.contains_key(if app.json_path.is_empty() { key } else { &app.json_path[0] });
+            let color = if is_edited { Color::Green } else { Color::Reset };
             
-            let color = if app.pending_edits.contains_key(key) {
-                Color::Green
-            } else {
-                Color::Reset
-            };
-            
+            // if val is JSON object/array, indicate it
+            let is_json = val.trim().starts_with('{') || val.trim().starts_with('[');
+            let display_key = if is_json { format!("{} [+] ", key) } else { format!("{}: ", key) };
+
             let line = Line::from(vec![
-                Span::styled(format!("{}: ", key), Style::default().fg(Color::Cyan)),
+                Span::styled(display_key, Style::default().fg(Color::Cyan)),
                 Span::styled(val, Style::default().fg(color)),
             ]);
             meta_items.push(ListItem::new(line));
         }
-    } else {
-        meta_items.push(ListItem::new("No metadata or invalid file."));
     }
 
     let meta_list = List::new(meta_items)
@@ -511,19 +659,23 @@ fn ui(f: &mut Frame, app: &mut App) {
     // ── Bottom: Help & Instructions ──
     let help_text = match app.state {
         AppState::Normal => {
+            let back = if !app.json_path.is_empty() { " | [Backspace] Back Up" } else { "" };
             if !app.pending_edits.is_empty() {
-                " [Tab] Focus | [↑/↓] Move | [e/Enter] Edit | [s] Strip | [r] Refresh | [Ctrl+S] Save | [q] Quit "
+                format!(" [Tab] Focus | [↑/↓] Move | [e/Enter] Edit/Open{} | [s] Strip | [r] Refresh | [Ctrl+S] Save | [q] Quit ", back)
             } else {
-                " [Tab] Focus | [↑/↓] Move | [e/Enter] Edit | [s] Strip | [r] Refresh | [q] Quit "
+                format!(" [Tab] Focus | [↑/↓] Move | [e/Enter] Edit/Open{} | [s] Strip | [r] Refresh | [q] Quit ", back)
             }
         },
-        AppState::Editing { .. } => " [Enter] Save edit | [Esc] Cancel ",
-        AppState::ConfirmExit => " You have unsaved edits! Save before exit? ",
+        AppState::Editing { .. } => " [Enter] Save edit | [Esc/Ctrl+C] Cancel | [Ctrl+←/→] Jump ".to_string(),
+        AppState::ConfirmExit => " You have unsaved edits! Save before exit? ".to_string(),
     };
+
+    let version_text = format!(" ime v{} ", env!("CARGO_PKG_VERSION"));
+    let version_width = version_text.chars().count() as u16 + 2;
 
     let bottom_layout = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Min(0), Constraint::Length(20)].as_ref())
+        .constraints([Constraint::Min(0), Constraint::Length(version_width)].as_ref())
         .split(chunks[1]);
 
     let p = Paragraph::new(help_text)
@@ -534,7 +686,6 @@ fn ui(f: &mut Frame, app: &mut App) {
         });
     f.render_widget(p, bottom_layout[0]);
 
-    let version_text = format!(" ime v{} ", env!("CARGO_PKG_VERSION"));
     let version_p = Paragraph::new(Line::from(Span::raw(version_text)))
         .block(Block::default().borders(Borders::ALL))
         .alignment(Alignment::Right);
@@ -551,7 +702,6 @@ fn ui(f: &mut Frame, app: &mut App) {
                 .borders(Borders::ALL)
                 .style(Style::default().fg(Color::Green));
             
-            // Build the text cursor visually using Spans
             let chars: Vec<char> = input.value.chars().collect();
             let mut before = String::new();
             let mut cursor_char = " ".to_string();
@@ -598,7 +748,6 @@ fn ui(f: &mut Frame, app: &mut App) {
     }
 }
 
-// Helper to create a centered rectangle (for popups)
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
     let popup_layout = Layout::default()
         .direction(Direction::Vertical)
