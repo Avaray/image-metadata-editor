@@ -4,6 +4,18 @@
 
 ## Installation
 
+### Using NPM / NPX (JavaScript/TypeScript ecosystem)
+
+You can run `ime` instantly without installation using `npx`, or install it globally via `npm`:
+
+```bash
+# Run instantly without installation
+npx ime-cli photo.jpg
+
+# Or install globally
+npm install -g ime-cli
+```
+
 ### Using Cargo (Recommended for Rust users)
 
 If you have Rust installed, you can easily install the latest version directly from crates.io:
