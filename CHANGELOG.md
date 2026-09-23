@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-23
+
+### Added
+- **Search & Filter (`/`)**: Press `/` in the Metadata panel to enter search mode. Typing filters keys and values in real-time (case-insensitive). The panel title shows the active query and match count. Press `Enter` to confirm the filter and return to navigation, or `Esc` to clear the filter entirely.
+- **NPM distribution**: Published as `@avaray/ime` on the NPM registry. Install globally with `npm install -g @avaray/ime` or run instantly via `npx @avaray/ime`.
+
 ## [1.1.0] - 2026-09-23
 
 ### Added
