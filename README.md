@@ -2,21 +2,13 @@
 
 **ime** is a fast, lightweight, and portable [CLI](https://en.wikipedia.org/wiki/Command-line_interface) written in [Rust](https://rust-lang.org/) for **reading**, **writing**, and completely **wiping** metadata from image files.
 
-## Installation
+## 📦 Installation
 
-### Using NPM / NPX (JavaScript/TypeScript ecosystem)
+### Pre-built binaries
 
-You can run `ime` instantly without installation using `npx`, or install it globally via `npm`:
+You can download a pre-built executable for your operating system from the [Releases](https://github.com/Avaray/image-metadata-editor/releases/latest) page.
 
-```bash
-# Run instantly without installation
-npx ime-cli photo.jpg
-
-# Or install globally
-npm install -g ime-cli
-```
-
-### Using Cargo (Recommended for Rust users)
+### Using Cargo (Rust ecosystem)
 
 If you have Rust installed, you can easily install the latest version directly from crates.io:
 
@@ -24,11 +16,21 @@ If you have Rust installed, you can easily install the latest version directly f
 cargo install ime
 ```
 
-### Pre-built binaries
+### Using Bun / NPM / PNPM  (JavaScript ecosystem)
 
-Alternatively, you can download a pre-built executable for your operating system from the [Releases](https://github.com/Avaray/image-metadata-editor/releases/latest) page.
+You can run `ime` instantly without installation using `bunx`, or install it globally via `npm` or `pnpm`:
 
-## Usage
+```bash
+# Run instantly without installation using Bun
+bunx ime-cli photo.jpg
+
+# Install globally with NPM
+npm install -g ime-cli
+```
+
+These are just two simple examples. Any well-known package manager should be able to install `ime-cli` globally, and most of them also offer running it without the need for installation.
+
+## ⚡️ Usage
 
 ```
 ime <file> [OPTIONS]
@@ -46,7 +48,7 @@ ime <file> [OPTIONS]
 | `--version` | `-v` | Print the semver version number and exit |
 | `--help` | `-h` | Print help and exit |
 
-## Reading metadata
+### Reading metadata
 
 Outputs all extracted metadata as a flat JSON object (one key per metadata directory).
 
@@ -58,7 +60,7 @@ ime photo.jpg
 ime photo.jpg -o meta.json
 ```
 
-### Output example
+**Output example:**
 
 ```json
 {
@@ -78,7 +80,7 @@ ime photo.jpg -o meta.json
 }
 ```
 
-## Extracting a single value (`-k` / `--key`)
+### Extracting a single value (`-k` / `--key`)
 
 Use dot-notation (same style as `jq`) to extract a single tag from the metadata.
 
@@ -109,7 +111,7 @@ ime photo.jpg -k Exif.NonExistent
 When the result is a plain string it is printed without surrounding quotes.  
 When the result is an object or array it is printed as pretty-printed JSON.
 
-## Stripping metadata (`-s` / `--strip`)
+### Stripping metadata (`-s` / `--strip`)
 
 Removes all EXIF and embedded metadata from the file in-place.  
 Use `-o` to write to a new file instead (original is left untouched).
@@ -124,7 +126,7 @@ ime photo.jpg -s
 ime photo.jpg -s -o clean.jpg
 ```
 
-## Injecting metadata (`--set`)
+### Injecting metadata (`--set`)
 
 Sets one or more metadata tags. Existing tags that are not mentioned are preserved.  
 Can be combined with `-o` to write to a new file.
@@ -148,7 +150,7 @@ ime image.png --set "prompt=a cat sitting on a roof" --set "negative_prompt=blur
 ime image.png --set-json '{"prompt":"a cat","steps":30,"cfg":7}'
 ```
 
-## Interactive TUI Mode
+### Interactive TUI Mode
 
 `ime` includes a built-in Interactive Terminal UI (TUI) for browsing and editing metadata visually without leaving your terminal.
 
@@ -156,15 +158,7 @@ ime image.png --set-json '{"prompt":"a cat","steps":30,"cfg":7}'
 ime ./photos --tui
 ```
 
-**Features:**
-- **Split-screen layout**: Browse files on the left, view their live metadata on the right.
-- **Keyboard navigation**: Use `Up`/`Down` or `Home`/`End` to navigate, and `Tab` or `Enter` to switch focus between the file list and the metadata list.
-- **Nested JSON Drill-Down**: If a metadata value is a JSON object or array, press `Enter` to step inside it and explore its properties. Press `Backspace` to step back up.
-- **Direct Editing**: Press `e` while focusing a metadata tag to edit its value directly in a popup. Supports `Ctrl+Left/Right` for fast word-jumping and `Ctrl+C` to cancel.
-- **Bulk Strip**: Press `s` to quickly strip all metadata from the highlighted file.
-- **Safety first**: If you press `q` (or `Esc`) to exit while you have unsaved edits in memory, `ime` will prompt you to save your changes (`nano`-style).
-
-## Batch Processing
+### Batch Processing
 
 If you provide a directory path instead of a file, `ime` will automatically process all supported files in that directory. Use the `-r` flag to process subdirectories recursively.
 
@@ -173,7 +167,7 @@ If you provide a directory path instead of a file, `ime` will automatically proc
 ime ./photos -s -r
 ```
 
-## Supported formats
+## 🖼️ Supported formats
 
 | Category | Formats | Read | Write |
 |----------|---------|------|-------|
@@ -182,7 +176,7 @@ ime ./photos -s -r
 | Image | HEIC/HEIF, AVIF, TIFF, CR3, RAF, IIQ | ✅ | ❌ |
 | Video | MP4, MOV, 3GP, MKV, WebM | ✅ | ❌ |
 
-## Exit codes
+## 🅾️ Exit codes
 
 | Code | Meaning |
 |------|---------|
