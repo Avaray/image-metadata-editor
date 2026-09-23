@@ -212,7 +212,12 @@ impl App {
                 .unwrap_or_default();
             
             let mut valid = false;
-            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&root_val) {
+            if let Ok(mut parsed) = serde_json::from_str::<serde_json::Value>(&root_val) {
+                if let serde_json::Value::String(ref s) = parsed {
+                    if let Ok(inner) = serde_json::from_str::<serde_json::Value>(s) {
+                        parsed = inner;
+                    }
+                }
                 if let Some(curr) = get_json_at_path(&parsed, &self.json_path[1..]) {
                     valid = true;
                     match curr {
@@ -270,9 +275,16 @@ impl App {
             .unwrap_or_default();
             
         if let Ok(mut parsed) = serde_json::from_str::<serde_json::Value>(&root_val) {
+            let is_wrapped_string = parsed.is_string();
+            let mut actual_json = if is_wrapped_string {
+                serde_json::from_str(parsed.as_str().unwrap()).unwrap_or(serde_json::Value::Null)
+            } else {
+                parsed.clone()
+            };
+
             let new_json: serde_json::Value = serde_json::from_str(&new_val).unwrap_or(serde_json::Value::String(new_val));
             
-            if let Some(parent) = get_json_at_path_mut(&mut parsed, &self.json_path[1..]) {
+            if let Some(parent) = get_json_at_path_mut(&mut actual_json, &self.json_path[1..]) {
                 match parent {
                     serde_json::Value::Object(map) => { map.insert(tag.to_string(), new_json); }
                     serde_json::Value::Array(arr) => {
@@ -284,7 +296,13 @@ impl App {
                 }
             }
             
-            if let Ok(new_root_str) = serde_json::to_string(&parsed) {
+            let final_root = if is_wrapped_string {
+                serde_json::Value::String(serde_json::to_string(&actual_json).unwrap_or_default())
+            } else {
+                actual_json
+            };
+
+            if let Ok(new_root_str) = serde_json::to_string(&final_root) {
                 self.pending_edits.insert(root_key.clone(), new_root_str);
             }
         }
@@ -378,7 +396,19 @@ fn get_json_at_path_mut<'a>(val: &'a mut serde_json::Value, path: &[String]) -> 
 }
 
 fn is_drillable_json(val: &str) -> bool {
-    let trimmed = val.trim();
+    let mut trimmed = val.trim();
+    
+    let mut parsed_string = None;
+    if trimmed.starts_with('"') && trimmed.ends_with('"') {
+        if let Ok(serde_json::Value::String(inner)) = serde_json::from_str::<serde_json::Value>(trimmed) {
+            parsed_string = Some(inner);
+        }
+    }
+    
+    if let Some(ref inner) = parsed_string {
+        trimmed = inner.trim();
+    }
+    
     if !trimmed.starts_with('{') && !trimmed.starts_with('[') {
         return false;
     }
