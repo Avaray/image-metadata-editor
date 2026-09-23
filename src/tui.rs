@@ -251,101 +251,103 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
         }
 
         if let Event::Key(key) = event::read().map_err(|e| AppError::Runtime(e.to_string()))? {
-            match &mut app.state {
-                AppState::Normal => {
-                    match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => {
-                            if !app.pending_edits.is_empty() {
-                                app.state = AppState::ConfirmExit;
-                            } else {
+            if key.kind == event::KeyEventKind::Press {
+                match &mut app.state {
+                    AppState::Normal => {
+                        match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => {
+                                if !app.pending_edits.is_empty() {
+                                    app.state = AppState::ConfirmExit;
+                                } else {
+                                    app.should_quit = true;
+                                }
+                            }
+                            KeyCode::Tab => {
+                                app.focus = match app.focus {
+                                    Focus::FileList => Focus::Metadata,
+                                    Focus::Metadata => Focus::FileList,
+                                };
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => match app.focus {
+                                Focus::FileList => app.next_file(),
+                                Focus::Metadata => app.next_meta(),
+                            },
+                            KeyCode::Up | KeyCode::Char('k') => match app.focus {
+                                Focus::FileList => app.previous_file(),
+                                Focus::Metadata => app.previous_meta(),
+                            },
+                            KeyCode::Char('s') => {
+                                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                                    let _ = app.save_pending_edits();
+                                } else {
+                                    // Strip
+                                    if let Some(idx) = app.file_state.selected() {
+                                        if let Some(path) = app.files.get(idx) {
+                                            let _ = crate::strip::strip_metadata(&path.to_string_lossy(), None);
+                                            app.load_selected_metadata();
+                                        }
+                                    }
+                                }
+                            }
+                            KeyCode::Char('e') => {
+                                if matches!(app.focus, Focus::Metadata) {
+                                    if let Some(idx) = app.meta_state.selected() {
+                                        if let Some(tag) = app.meta_keys.get(idx).cloned() {
+                                            let current_val = app.pending_edits.get(&tag)
+                                                .or_else(|| app.current_metadata.as_ref().and_then(|m| m.get(&tag)))
+                                                .cloned()
+                                                .unwrap_or_default();
+                                            app.state = AppState::Editing {
+                                                tag,
+                                                input: InputState::new(current_val),
+                                            };
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    AppState::Editing { tag, input } => {
+                        match key.code {
+                            KeyCode::Enter => {
+                                let val = input.value.clone();
+                                let tag_clone = tag.clone();
+                                app.pending_edits.insert(tag_clone, val);
+                                app.state = AppState::Normal;
+                            }
+                            KeyCode::Esc => {
+                                app.state = AppState::Normal;
+                            }
+                            KeyCode::Backspace => {
+                                input.remove();
+                            }
+                            KeyCode::Left => {
+                                input.move_cursor_left();
+                            }
+                            KeyCode::Right => {
+                                input.move_cursor_right();
+                            }
+                            KeyCode::Char(c) => {
+                                input.insert(c);
+                            }
+                            _ => {}
+                        }
+                    }
+                    AppState::ConfirmExit => {
+                        match key.code {
+                            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                                let _ = app.save_pending_edits();
                                 app.should_quit = true;
                             }
-                        }
-                        KeyCode::Tab => {
-                            app.focus = match app.focus {
-                                Focus::FileList => Focus::Metadata,
-                                Focus::Metadata => Focus::FileList,
-                            };
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => match app.focus {
-                            Focus::FileList => app.next_file(),
-                            Focus::Metadata => app.next_meta(),
-                        },
-                        KeyCode::Up | KeyCode::Char('k') => match app.focus {
-                            Focus::FileList => app.previous_file(),
-                            Focus::Metadata => app.previous_meta(),
-                        },
-                        KeyCode::Char('s') => {
-                            if key.modifiers.contains(KeyModifiers::CONTROL) {
-                                let _ = app.save_pending_edits();
-                            } else {
-                                // Strip
-                                if let Some(idx) = app.file_state.selected() {
-                                    if let Some(path) = app.files.get(idx) {
-                                        let _ = crate::strip::strip_metadata(&path.to_string_lossy(), None);
-                                        app.load_selected_metadata();
-                                    }
-                                }
+                            KeyCode::Char('n') | KeyCode::Char('N') => {
+                                app.should_quit = true;
                             }
-                        }
-                        KeyCode::Char('e') => {
-                            if matches!(app.focus, Focus::Metadata) {
-                                if let Some(idx) = app.meta_state.selected() {
-                                    if let Some(tag) = app.meta_keys.get(idx).cloned() {
-                                        let current_val = app.pending_edits.get(&tag)
-                                            .or_else(|| app.current_metadata.as_ref().and_then(|m| m.get(&tag)))
-                                            .cloned()
-                                            .unwrap_or_default();
-                                        app.state = AppState::Editing {
-                                            tag,
-                                            input: InputState::new(current_val),
-                                        };
-                                    }
-                                }
+                            KeyCode::Char('c') | KeyCode::Char('C') | KeyCode::Esc => {
+                                app.state = AppState::Normal;
                             }
+                            _ => {}
                         }
-                        _ => {}
-                    }
-                }
-                AppState::Editing { tag, input } => {
-                    match key.code {
-                        KeyCode::Enter => {
-                            let val = input.value.clone();
-                            let tag_clone = tag.clone();
-                            app.pending_edits.insert(tag_clone, val);
-                            app.state = AppState::Normal;
-                        }
-                        KeyCode::Esc => {
-                            app.state = AppState::Normal;
-                        }
-                        KeyCode::Backspace => {
-                            input.remove();
-                        }
-                        KeyCode::Left => {
-                            input.move_cursor_left();
-                        }
-                        KeyCode::Right => {
-                            input.move_cursor_right();
-                        }
-                        KeyCode::Char(c) => {
-                            input.insert(c);
-                        }
-                        _ => {}
-                    }
-                }
-                AppState::ConfirmExit => {
-                    match key.code {
-                        KeyCode::Char('y') | KeyCode::Char('Y') => {
-                            let _ = app.save_pending_edits();
-                            app.should_quit = true;
-                        }
-                        KeyCode::Char('n') | KeyCode::Char('N') => {
-                            app.should_quit = true;
-                        }
-                        KeyCode::Char('c') | KeyCode::Char('C') | KeyCode::Esc => {
-                            app.state = AppState::Normal;
-                        }
-                        _ => {}
                     }
                 }
             }
