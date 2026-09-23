@@ -42,7 +42,7 @@ fn run() -> Result<(), AppError> {
         }
         CliResult::Args(args) => {
             if args.tui {
-                return crate::tui::run(&args.file);
+                return crate::tui::run(&args.file, args.power_user);
             }
 
             let meta = std::fs::metadata(&args.file).map_err(|e| AppError::Runtime(format!("Failed to read file info: {}", e)))?;
@@ -78,13 +78,11 @@ fn process_file(file: &str, args: &cli::Args) -> Result<(), AppError> {
 
     // ── Step 0: delete specific keys (optional) ───────────────────────────
     if has_delete && !args.strip {
-        inject::delete_metadata_keys(file, args.output.as_deref(), &args.delete)
-            .map_err(|e| AppError::Runtime(e.to_string()))?;
+        inject::delete_metadata_keys(file, args.output.as_deref(), &args.delete).map_err(|e| AppError::Runtime(e.to_string()))?;
         if !has_inject {
             return Ok(());
         }
     }
-
 
     // ── Step 1: strip (optional) ──────────────────────────────────────────
     let strip_temp: Option<String> = if args.strip && has_inject {

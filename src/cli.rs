@@ -11,6 +11,7 @@ pub struct Args {
     pub recursive: bool,
     pub directory: bool,
     pub tui: bool,
+    pub power_user: bool,
 }
 
 pub enum CliResult {
@@ -31,6 +32,7 @@ pub fn parse_args() -> Result<CliResult, lexopt::Error> {
     let mut recursive = false;
     let mut directory = false;
     let mut tui = false;
+    let mut power_user = false;
 
     while let Some(arg) = parser.next()? {
         match arg {
@@ -46,14 +48,15 @@ pub fn parse_args() -> Result<CliResult, lexopt::Error> {
             Arg::Short('d') | Arg::Long("dir") | Arg::Long("directory") => {
                 directory = true;
             }
+            Arg::Short('p') | Arg::Long("power") => {
+                power_user = true;
+            }
             Arg::Long("set") => {
                 let val = parser.value()?.to_string_lossy().into_owned();
                 if let Some((k, v)) = val.split_once('=') {
                     set.insert(k.to_string(), v.to_string());
                 } else {
-                    return Err(lexopt::Error::Custom(
-                        "Invalid --set format, expected Key=Value or .path.to.key=Value".into(),
-                    ));
+                    return Err(lexopt::Error::Custom("Invalid --set format, expected Key=Value or .path.to.key=Value".into()));
                 }
             }
             Arg::Long("set-json") => {
@@ -83,20 +86,7 @@ pub fn parse_args() -> Result<CliResult, lexopt::Error> {
     }
 
     match file {
-        Some(f) => Ok(CliResult::Args(Args {
-            file: f,
-            key,
-            output,
-            strip,
-            set,
-            set_json,
-            delete,
-            recursive,
-            directory,
-            tui,
-        })),
-        None => Err(lexopt::Error::MissingValue {
-            option: Some("file".to_string()),
-        }),
+        Some(f) => Ok(CliResult::Args(Args { file: f, key, output, strip, set, set_json, delete, recursive, directory, tui, power_user })),
+        None => Err(lexopt::Error::MissingValue { option: Some("file".to_string()) }),
     }
 }

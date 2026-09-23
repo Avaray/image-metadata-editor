@@ -102,6 +102,7 @@ enum AppState {
     Searching,
     Editing { tag: String, input: InputState },
     AddingTag { key: InputState, value: InputState, focus_value: bool },
+    ConfirmStrip,
     ConfirmDelete { tag: String },
     ConfirmExit,
 }
@@ -129,10 +130,11 @@ struct App {
     focus: Focus,
     state: AppState,
     should_quit: bool,
+    power_user: bool,
 }
 
 impl App {
-    fn new(start_path: PathBuf) -> Result<Self, AppError> {
+    fn new(start_path: PathBuf, power_user: bool) -> Result<Self, AppError> {
         let (current_dir, initial_file) = if start_path.is_dir() { (start_path.clone(), None) } else { (start_path.parent().unwrap_or_else(|| std::path::Path::new("")).to_path_buf(), Some(start_path.clone())) };
 
         let mut app = App {
@@ -152,6 +154,7 @@ impl App {
             focus: Focus::FileList,
             state: AppState::Normal,
             should_quit: false,
+            power_user,
         };
 
         app.load_files()?;
@@ -576,14 +579,14 @@ fn render_cursor_spans(chars: &[char], cursor: usize) -> (String, String, String
     (before, cursor_char, after)
 }
 
-pub fn run(path: &str) -> Result<(), AppError> {
+pub fn run(path: &str, power_user: bool) -> Result<(), AppError> {
     enable_raw_mode().map_err(|e| AppError::Runtime(e.to_string()))?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture).map_err(|e| AppError::Runtime(e.to_string()))?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend).map_err(|e| AppError::Runtime(e.to_string()))?;
 
-    let app = App::new(PathBuf::from(path))?;
+    let app = App::new(PathBuf::from(path), power_user)?;
     let res = run_app(&mut terminal, app);
 
     disable_raw_mode().map_err(|e| AppError::Runtime(e.to_string()))?;
@@ -625,7 +628,12 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                             }
                             KeyCode::Char('q') => {
                                 if app.has_pending_changes() {
-                                    app.state = AppState::ConfirmExit;
+                                    if app.power_user {
+                                        let _ = app.save_pending_edits();
+                                        app.should_quit = true;
+                                    } else {
+                                        app.state = AppState::ConfirmExit;
+                                    }
                                 } else {
                                     app.should_quit = true;
                                 }
@@ -723,11 +731,15 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                                 if key.modifiers.contains(KeyModifiers::CONTROL) {
                                     let _ = app.save_pending_edits();
                                 } else {
-                                    if let Some(idx) = app.file_state.selected() {
-                                        if let Some(path) = app.files.get(idx) {
-                                            let _ = crate::strip::strip_metadata(&path.to_string_lossy(), None);
-                                            app.load_selected_metadata();
+                                    if app.power_user {
+                                        if let Some(idx) = app.file_state.selected() {
+                                            if let Some(path) = app.files.get(idx) {
+                                                let _ = crate::strip::strip_metadata(&path.to_string_lossy(), None);
+                                                app.load_selected_metadata();
+                                            }
                                         }
+                                    } else {
+                                        app.state = AppState::ConfirmStrip;
                                     }
                                 }
                             }
@@ -762,7 +774,12 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                                 if matches!(app.focus, Focus::Metadata) {
                                     if let Some(idx) = app.meta_state.selected() {
                                         if let Some(tag) = app.meta_keys.get(idx).cloned() {
-                                            app.state = AppState::ConfirmDelete { tag };
+                                            if app.power_user {
+                                                app.pending_deletes.insert(tag);
+                                                app.reload_meta_view();
+                                            } else {
+                                                app.state = AppState::ConfirmDelete { tag };
+                                            }
                                         }
                                     }
                                 }
@@ -894,6 +911,21 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                         }
                         _ => {}
                     },
+                    AppState::ConfirmStrip => match key.code {
+                        KeyCode::Char('y') | KeyCode::Char('Y') => {
+                            if let Some(idx) = app.file_state.selected() {
+                                if let Some(path) = app.files.get(idx) {
+                                    let _ = crate::strip::strip_metadata(&path.to_string_lossy(), None);
+                                    app.load_selected_metadata();
+                                }
+                            }
+                            app.state = AppState::Normal;
+                        }
+                        KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
+                            app.state = AppState::Normal;
+                        }
+                        _ => {}
+                    },
                     AppState::ConfirmDelete { tag } => match key.code {
                         KeyCode::Char('y') | KeyCode::Char('Y') => {
                             let tag_owned = tag.clone();
@@ -1016,18 +1048,19 @@ fn ui(f: &mut Frame, app: &mut App) {
                 " [Enter/Tab] Move to Value | [Esc/Ctrl+C] Cancel ".to_string()
             }
         }
+        AppState::ConfirmStrip => " Strip all metadata? [y] Yes  [n/Esc] No ".to_string(),
         AppState::ConfirmDelete { tag } => format!(" Delete '{tag}'? [y] Yes  [n/Esc] No "),
         AppState::ConfirmExit => " You have unsaved changes! Save before exit? ".to_string(),
     };
 
-    let version_text = format!(" 🧬 ime v{} ", env!("CARGO_PKG_VERSION"));
+    let version_text = if app.power_user { format!(" 🧬 🧨 ime v{} ", env!("CARGO_PKG_VERSION")) } else { format!(" 🧬 ime v{} ", env!("CARGO_PKG_VERSION")) };
     // Use display width (each emoji = 2 terminal columns) for correct layout sizing
     let version_width = version_text.chars().fold(0u16, |acc, c| acc + if (c as u32) > 0x7F { 2 } else { 1 }) + 2;
 
     let bottom_layout = Layout::default().direction(Direction::Horizontal).constraints([Constraint::Min(0), Constraint::Length(version_width)].as_ref()).split(chunks[1]);
 
     let p = Paragraph::new(help_text).block(Block::default().borders(Borders::ALL)).style(match app.state {
-        AppState::ConfirmExit => Style::default().fg(Color::Red),
+        AppState::ConfirmExit | AppState::ConfirmStrip => Style::default().fg(Color::Red),
         _ => Style::default(),
     });
     f.render_widget(p, bottom_layout[0]);

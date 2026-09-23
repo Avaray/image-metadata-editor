@@ -229,11 +229,7 @@ fn write_text_chunk(out: &mut impl Write, key: &str, value: &str) -> std::io::Re
 /// For PNG: removes matching `tEXt` chunks by key name (the part before the `.` in
 /// the flat key, e.g. `"PngText.prompt"` → key `"prompt"`).
 /// For JPEG/WebP: reads all metadata, removes the requested keys, then re-injects.
-pub fn delete_metadata_keys(
-    path: &str,
-    out_path: Option<&str>,
-    keys_to_delete: &[String],
-) -> Result<(), String> {
+pub fn delete_metadata_keys(path: &str, out_path: Option<&str>, keys_to_delete: &[String]) -> Result<(), String> {
     if keys_to_delete.is_empty() {
         return Ok(());
     }
@@ -249,36 +245,20 @@ pub fn delete_metadata_keys(
     if is_png {
         // For PNG we can surgically remove tEXt chunks by key name.
         // Flat key format: "PngText.prompt" → chunk key "prompt"
-        let chunk_keys: std::collections::HashSet<String> = keys_to_delete
-            .iter()
-            .map(|k| {
-                k.split_once('.')
-                    .map(|(_, tail)| tail.to_string())
-                    .unwrap_or_else(|| k.clone())
-            })
-            .collect();
+        let chunk_keys: std::collections::HashSet<String> = keys_to_delete.iter().map(|k| k.split_once('.').map(|(_, tail)| tail.to_string()).unwrap_or_else(|| k.clone())).collect();
 
         let temp = format!("{}.del_tmp", path);
         delete_png_text_keys(path, &temp, &chunk_keys)?;
 
         let dest = out_path.unwrap_or(path);
-        std::fs::rename(&temp, dest)
-            .map_err(|e| format!("Failed to write output: {}", e))?;
+        std::fs::rename(&temp, dest).map_err(|e| format!("Failed to write output: {}", e))?;
     } else {
         // For JPEG/WebP: read all tags, remove requested ones, strip, re-inject.
         // We treat the flat key as the tag name (without the group prefix).
-        let delete_short: std::collections::HashSet<String> = keys_to_delete
-            .iter()
-            .map(|k| {
-                k.split_once('.')
-                    .map(|(_, tail)| tail.to_string())
-                    .unwrap_or_else(|| k.clone())
-            })
-            .collect();
+        let delete_short: std::collections::HashSet<String> = keys_to_delete.iter().map(|k| k.split_once('.').map(|(_, tail)| tail.to_string()).unwrap_or_else(|| k.clone())).collect();
 
         let mut parser = nom_exif::MediaParser::new();
-        let metadata =
-            crate::extract::extract(path, &mut parser).map_err(|e| e.to_string())?;
+        let metadata = crate::extract::extract(path, &mut parser).map_err(|e| e.to_string())?;
 
         let mut remaining: BTreeMap<String, String> = BTreeMap::new();
         for tags in metadata.values() {
@@ -291,13 +271,11 @@ pub fn delete_metadata_keys(
 
         // Strip then re-inject what remains
         let temp_stripped = format!("{}.strip_tmp", path);
-        crate::strip::strip_metadata(path, Some(&temp_stripped))
-            .map_err(|e| e.to_string())?;
+        crate::strip::strip_metadata(path, Some(&temp_stripped)).map_err(|e| e.to_string())?;
 
         let dest = out_path.unwrap_or(path);
         if remaining.is_empty() {
-            std::fs::rename(&temp_stripped, dest)
-                .map_err(|e| format!("Failed to write output: {}", e))?;
+            std::fs::rename(&temp_stripped, dest).map_err(|e| format!("Failed to write output: {}", e))?;
         } else {
             inject_metadata(&temp_stripped, Some(dest), &remaining)?;
             std::fs::remove_file(&temp_stripped).ok();
@@ -307,11 +285,7 @@ pub fn delete_metadata_keys(
     Ok(())
 }
 
-fn delete_png_text_keys(
-    in_path: &str,
-    out_path: &str,
-    keys: &std::collections::HashSet<String>,
-) -> Result<(), String> {
+fn delete_png_text_keys(in_path: &str, out_path: &str, keys: &std::collections::HashSet<String>) -> Result<(), String> {
     let mut inp = File::open(in_path).map_err(|e| e.to_string())?;
     let mut out = BufWriter::new(File::create(out_path).map_err(|e| e.to_string())?);
 
