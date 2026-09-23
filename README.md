@@ -166,6 +166,15 @@ If you provide a directory path instead of a file, `ime` will automatically proc
 ```bash
 # Strip metadata from all images in the 'photos' directory and its subdirectories
 ime ./photos -s -r
+
+# Extract metadata from every image in a directory and save to individual JSON files
+for f in ./photos/*.jpg; do ime "$f" > "${f%.jpg}.json"; done
+
+# Add a copyright tag to all PNG files in the current directory
+ime . --set Copyright="© 2025 John Doe"
+
+# Add the same tag recursively across nested folders
+ime ./photos --set Copyright="© 2025 John Doe" -r
 ```
 
 ## 🖼️ Supported formats
