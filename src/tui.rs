@@ -85,6 +85,7 @@ enum Focus {
 
 enum AppState {
     Normal,
+    Searching,
     Editing { tag: String, input: InputState },
     ConfirmExit,
 }
@@ -98,6 +99,10 @@ struct App {
     meta_state: ListState,
     meta_keys: Vec<String>,
     meta_values: BTreeMap<String, String>,
+
+    // all_meta_keys holds the full unfiltered list; meta_keys is the filtered view
+    all_meta_keys: Vec<String>,
+    search_query: String,
 
     pending_edits: BTreeMap<String, String>,
     json_path: Vec<String>,
@@ -126,6 +131,8 @@ impl App {
             meta_state: ListState::default(),
             meta_keys: Vec::new(),
             meta_values: BTreeMap::new(),
+            all_meta_keys: Vec::new(),
+            search_query: String::new(),
             pending_edits: BTreeMap::new(),
             json_path: Vec::new(),
             focus: Focus::FileList,
@@ -166,6 +173,8 @@ impl App {
         self.current_metadata = None;
         self.pending_edits.clear();
         self.json_path.clear();
+        self.search_query.clear();
+        self.all_meta_keys.clear();
         
         if let Some(idx) = self.file_state.selected() {
             if let Some(path) = self.files.get(idx) {
@@ -196,8 +205,8 @@ impl App {
             }
             for k in self.pending_edits.keys() { keys.insert(k.clone()); }
             
-            self.meta_keys = keys.into_iter().collect();
-            for k in &self.meta_keys {
+            self.all_meta_keys = keys.into_iter().collect();
+            for k in &self.all_meta_keys {
                 let val = self.pending_edits.get(k)
                     .or_else(|| self.current_metadata.as_ref().and_then(|m| m.get(k)))
                     .cloned()
@@ -222,7 +231,7 @@ impl App {
                     valid = true;
                     match curr {
                         serde_json::Value::Object(map) => {
-                            self.meta_keys = map.keys().cloned().collect();
+                            self.all_meta_keys = map.keys().cloned().collect();
                             for (k, v) in map {
                                 let display_val = if v.is_string() {
                                     v.as_str().unwrap().to_string()
@@ -233,7 +242,7 @@ impl App {
                             }
                         }
                         serde_json::Value::Array(arr) => {
-                            self.meta_keys = (0..arr.len()).map(|i| i.to_string()).collect();
+                            self.all_meta_keys = (0..arr.len()).map(|i| i.to_string()).collect();
                             for (i, v) in arr.iter().enumerate() {
                                 let display_val = if v.is_string() {
                                     v.as_str().unwrap().to_string()
@@ -253,7 +262,21 @@ impl App {
                 return self.reload_meta_view();
             }
         }
-        
+
+        self.apply_search_filter();
+    }
+
+    fn apply_search_filter(&mut self) {
+        let q = self.search_query.to_lowercase();
+        if q.is_empty() {
+            self.meta_keys = self.all_meta_keys.clone();
+        } else {
+            self.meta_keys = self.all_meta_keys.iter().filter(|k| {
+                let val = self.meta_values.get(*k).map(|s| s.as_str()).unwrap_or("");
+                k.to_lowercase().contains(&q) || val.to_lowercase().contains(&q)
+            }).cloned().collect();
+        }
+
         if self.meta_keys.is_empty() {
             self.meta_state.select(None);
         } else {
@@ -592,6 +615,36 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                                     }
                                 }
                             }
+                            KeyCode::Char('/') => {
+                                if matches!(app.focus, Focus::Metadata) {
+                                    app.state = AppState::Searching;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    AppState::Searching => {
+                        match key.code {
+                            KeyCode::Esc => {
+                                // Clear filter and exit search mode
+                                app.search_query.clear();
+                                app.apply_search_filter();
+                                app.state = AppState::Normal;
+                            }
+                            KeyCode::Enter => {
+                                // Confirm filter, return to normal navigation
+                                app.state = AppState::Normal;
+                            }
+                            KeyCode::Backspace => {
+                                app.search_query.pop();
+                                app.apply_search_filter();
+                            }
+                            KeyCode::Down => { app.next_meta(); }
+                            KeyCode::Up => { app.previous_meta(); }
+                            KeyCode::Char(c) => {
+                                app.search_query.push(c);
+                                app.apply_search_filter();
+                            }
                             _ => {}
                         }
                     }
@@ -687,11 +740,22 @@ fn ui(f: &mut Frame, app: &mut App) {
     f.render_stateful_widget(file_list, top_chunks[0], &mut app.file_state);
 
     // ── Right: Metadata ──
-    let meta_title = if app.json_path.is_empty() {
-        if app.pending_edits.is_empty() { " Metadata ".to_string() } else { " Metadata (UNSAVED EDITS) ".to_string() }
-    } else {
-        let path = app.json_path.join(" > ");
-        if app.pending_edits.is_empty() { format!(" Metadata > {} ", path) } else { format!(" Metadata > {} (UNSAVED EDITS) ", path) }
+    let meta_title = {
+        let base = if app.json_path.is_empty() {
+            " Metadata".to_string()
+        } else {
+            format!(" Metadata > {}", app.json_path.join(" > "))
+        };
+        let search_part = if !app.search_query.is_empty() {
+            let count = app.meta_keys.len();
+            format!(" / {}█ ({}) ", app.search_query, count)
+        } else if matches!(app.state, AppState::Searching) {
+            " / █ ".to_string()
+        } else {
+            String::new()
+        };
+        let edit_part = if !app.pending_edits.is_empty() { " (UNSAVED EDITS)" } else { "" };
+        format!("{}{}{} ", base, search_part, edit_part)
     };
     
     let mut meta_block = Block::default().borders(Borders::ALL).title(meta_title);
@@ -704,7 +768,12 @@ fn ui(f: &mut Frame, app: &mut App) {
 
     let mut meta_items = Vec::new();
     if app.meta_keys.is_empty() {
-        meta_items.push(ListItem::new("No metadata or invalid file."));
+        let msg = if !app.search_query.is_empty() {
+            "No matching metadata entries.".to_string()
+        } else {
+            "No metadata or invalid file.".to_string()
+        };
+        meta_items.push(ListItem::new(msg));
     } else {
         for key in &app.meta_keys {
             let val = app.meta_values.get(key).cloned().unwrap_or_default();
@@ -732,12 +801,14 @@ fn ui(f: &mut Frame, app: &mut App) {
     let help_text = match app.state {
         AppState::Normal => {
             let back = if !app.json_path.is_empty() { " | [←/Backspace] Back Up" } else { "" };
+            let search_hint = if !app.search_query.is_empty() { " | [/] Edit filter | [Esc] Clear" } else { "" };
             if !app.pending_edits.is_empty() {
-                format!(" [Tab] Focus | [←/→/↑/↓] Navigate | [e/Enter] Edit/Open{} | [s] Strip | [r] Refresh | [Ctrl+S] Save | [q] Quit ", back)
+                format!(" [Tab] Focus | [←/→/↑/↓] Navigate | [e/Enter] Edit/Open{}{} | [s] Strip | [r] Refresh | [Ctrl+S] Save | [q] Quit ", back, search_hint)
             } else {
-                format!(" [Tab] Focus | [←/→/↑/↓] Navigate | [e/Enter] Edit/Open{} | [s] Strip | [r] Refresh | [q] Quit ", back)
+                format!(" [Tab] Focus | [←/→/↑/↓] Navigate | [e/Enter] Edit/Open | [/] Search{}{} | [s] Strip | [r] Refresh | [q] Quit ", back, search_hint)
             }
         },
+        AppState::Searching => " [↑/↓] Navigate results | [Enter] Confirm filter | [Esc] Clear & exit search ".to_string(),
         AppState::Editing { .. } => " [Enter] Save edit | [Esc/Ctrl+C] Cancel | [Ctrl+←/→] Jump ".to_string(),
         AppState::ConfirmExit => " You have unsaved edits! Save before exit? ".to_string(),
     };
