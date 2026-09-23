@@ -274,7 +274,7 @@ impl App {
             .cloned()
             .unwrap_or_default();
             
-        if let Ok(mut parsed) = serde_json::from_str::<serde_json::Value>(&root_val) {
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&root_val) {
             let is_wrapped_string = parsed.is_string();
             let mut actual_json = if is_wrapped_string {
                 serde_json::from_str(parsed.as_str().unwrap()).unwrap_or(serde_json::Value::Null)
