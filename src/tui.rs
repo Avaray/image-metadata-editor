@@ -222,7 +222,8 @@ impl App {
                 .unwrap_or_default();
             
             let mut valid = false;
-            if let Ok(mut parsed) = serde_json::from_str::<serde_json::Value>(&root_val) {
+            let root_val_sanitized = sanitize_json(&root_val);
+            if let Ok(mut parsed) = serde_json::from_str::<serde_json::Value>(&root_val_sanitized) {
                 if let serde_json::Value::String(ref s) = parsed {
                     if let Ok(inner) = serde_json::from_str::<serde_json::Value>(s) {
                         parsed = inner;
@@ -419,31 +420,83 @@ fn get_json_at_path_mut<'a>(val: &'a mut serde_json::Value, path: &[String]) -> 
     Some(curr)
 }
 
-fn is_drillable_json(val: &str) -> bool {
-    let mut trimmed = val.trim();
-    
-    let mut parsed_string = None;
-    if trimmed.starts_with('"') && trimmed.ends_with('"') {
-        if let Ok(serde_json::Value::String(inner)) = serde_json::from_str::<serde_json::Value>(trimmed) {
-            parsed_string = Some(inner);
+/// Replaces bare `NaN`, `Infinity`, `-Infinity` (invalid JSON but legal in JS/ComfyUI)
+/// with `null` so serde_json can parse the resulting string. Only replaces tokens
+/// that appear outside of JSON strings (respects `\"` escape sequences).
+fn sanitize_json(input: &str) -> std::borrow::Cow<'_, str> {
+    if !input.contains("NaN") && !input.contains("Infinity") {
+        return std::borrow::Cow::Borrowed(input);
+    }
+    let chars: Vec<char> = input.chars().collect();
+    let n = chars.len();
+    let mut result = String::with_capacity(n);
+    let mut i = 0;
+    let mut in_string = false;
+
+    while i < n {
+        let c = chars[i];
+        if in_string {
+            result.push(c);
+            if c == '\\' && i + 1 < n {
+                result.push(chars[i + 1]);
+                i += 2;
+                continue;
+            } else if c == '"' {
+                in_string = false;
+            }
+        } else {
+            match c {
+                '"' => { result.push(c); in_string = true; }
+                'N' if i + 2 < n && chars[i + 1] == 'a' && chars[i + 2] == 'N' => {
+                    result.push_str("null");
+                    i += 3;
+                    continue;
+                }
+                'I' if i + 7 < n && &chars[i+1..=i+7].iter().collect::<String>() == "nfinity" => {
+                    result.push_str("null");
+                    i += 8;
+                    continue;
+                }
+                '-' if i + 8 < n && chars[i + 1] == 'I'
+                    && &chars[i+2..=i+8].iter().collect::<String>() == "nfinity" =>
+                {
+                    result.push_str("null");
+                    i += 9;
+                    continue;
+                }
+                _ => { result.push(c); }
+            }
         }
+        i += 1;
     }
-    
-    if let Some(ref inner) = parsed_string {
-        trimmed = inner.trim();
-    }
-    
-    if !trimmed.starts_with('{') && !trimmed.starts_with('[') {
-        return false;
-    }
-    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(trimmed) {
-        match parsed {
-            serde_json::Value::Object(map) => !map.is_empty(),
-            serde_json::Value::Array(arr) => !arr.is_empty(),
-            _ => false,
+    std::borrow::Cow::Owned(result)
+}
+
+fn is_drillable_json(val: &str) -> bool {
+    let trimmed = val.trim();
+
+    // Handle string-wrapped JSON (e.g. PngText chunks stored as JSON string)
+    let unwrapped_storage;
+    let to_check: &str = if trimmed.starts_with('"') && trimmed.ends_with('"') {
+        if let Ok(serde_json::Value::String(inner)) = serde_json::from_str::<serde_json::Value>(trimmed) {
+            unwrapped_storage = inner;
+            unwrapped_storage.trim()
+        } else {
+            return false;
         }
     } else {
-        false
+        trimmed
+    };
+
+    if !to_check.starts_with('{') && !to_check.starts_with('[') {
+        return false;
+    }
+
+    let sanitized = sanitize_json(to_check);
+    match serde_json::from_str::<serde_json::Value>(&sanitized) {
+        Ok(serde_json::Value::Object(map)) => !map.is_empty(),
+        Ok(serde_json::Value::Array(arr)) => !arr.is_empty(),
+        _ => false,
     }
 }
 
