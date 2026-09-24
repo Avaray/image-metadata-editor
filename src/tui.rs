@@ -274,7 +274,7 @@ impl App {
             } else {
                 p.file_name().unwrap_or_default().to_string_lossy().into_owned()
             };
-            
+
             let mut prefix = "";
             if self.explorer_mode {
                 if name == ".." {

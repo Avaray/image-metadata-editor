@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-09-24
+
+### Added
+- **Explorer Mode**: Added a new file explorer mode to the TUI with Nerd Font icons for seamless directory navigation.
+- **Power User Mode (`-p` / `--power`)**: Unlocks advanced/dangerous operations in both CLI and TUI.
+- **Delete Files**: Added `--delete` flag (CLI) and `d` key shortcut (TUI) to delete files (requires Power User mode).
+- **Clipboard Copy**: Press `c` in the TUI to copy the selected metadata value to the clipboard.
+- **TUI Enhancements**: Added file filtering, multiline text pasting, and the ability to press `Enter` on an empty metadata list to add a new tag.
+- **WebP Injection**: Added support for injecting metadata into simple WebP files.
+- **Read-Only Indicators**: The TUI now supports more read-only formats and visually indicates them.
+
+### Fixed
+- Resolved numerous navigation and UI rendering bugs in the new explorer mode (e.g., drive root detection, virtual root handling).
+- Improved error handling when saving files in the TUI and refined the force-quit logic.
+- Fixed NPM package distribution issues by syncing `optionalDependencies` versions and hardening `bin.js` resolution.
+- Hardened CI release scripts and enabled auto-triggering of releases on `Cargo.toml` version bumps.
+
 ## [1.3.0] - 2026-09-23
 
 ### Added
