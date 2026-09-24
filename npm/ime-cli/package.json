@@ -38,5 +38,5 @@
         "@avaray/ime-win32-x64": "*"
     },
     "repository": { "type": "git", "url": "git+https://github.com/Avaray/image-metadata-editor.git" },
-    "version": "1.5.0"
+    "version": "1.6.0"
 }

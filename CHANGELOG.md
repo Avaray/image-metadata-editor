@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-09-24
+
+### Added
+- **NPM**: Publish binaries for all 6 platforms (Linux x64/ARM64/ARMv7, macOS ARM64/x64, Windows x64) as optional dependencies.
+- **NPM**: Expanded package metadata (author, homepage, keywords, publishConfig) for all platform packages.
+- **TUI**: Remember and restore selection when navigating nested JSON structures (drill-down/up preserves cursor position).
+
+### Fixed
+- **TUI**: Correctly restore JSON navigation selection at all depths when going back with Backspace/Esc/Left.
+- **TUI**: Hide "[READ ONLY]" indicator and show "No file selected." message when opening TUI in empty directory without `--explorer`.
+
+### Changed
+- **CI**: Add SHA-256 checksums for all binaries to GitHub Release notes above the Full Changelog link.
+
 ## [1.5.0] - 2026-09-24
 
 ### Added
