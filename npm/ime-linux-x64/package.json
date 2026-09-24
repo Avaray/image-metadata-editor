@@ -4,10 +4,10 @@
   "description": "Linux x64 binary for @avaray/ime",
   "os": ["linux"],
   "cpu": ["x64"],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Avaray/image-metadata-editor.git"
-  },
-  "author": "Avaray",
-  "license": "MIT"
+  "repository": { "type": "git", "url": "git+https://github.com/Avaray/image-metadata-editor.git" },
+  "author": "Dawid Wasowski <contact@dav.one>",
+  "homepage": "https://dav.one/image-metadata-editor/",
+  "license": "CC-BY-NC-4.0",
+  "files": ["ime"],
+  "publishConfig": { "access": "public", "registry": "https://registry.npmjs.org" }
 }

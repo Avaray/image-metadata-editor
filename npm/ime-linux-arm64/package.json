@@ -1,10 +1,13 @@
 {
-    "name": "@avaray/ime-linux-arm64",
-    "version": "1.5.0",
-    "description": "Linux ARM64 binary for @avaray/ime",
-    "os": [ "linux" ],
-    "cpu": [ "arm64" ],
-    "repository": { "type": "git", "url": "git+https://github.com/Avaray/image-metadata-editor.git" },
-    "author": "Avaray",
-    "license": "CC-BY-NC-4.0"
+  "name": "@avaray/ime-linux-arm64",
+  "version": "1.5.0",
+  "description": "Linux ARM64 binary for @avaray/ime",
+  "os": ["linux"],
+  "cpu": ["arm64"],
+  "repository": { "type": "git", "url": "git+https://github.com/Avaray/image-metadata-editor.git" },
+  "author": "Dawid Wasowski <contact@dav.one>",
+  "homepage": "https://dav.one/image-metadata-editor/",
+  "license": "CC-BY-NC-4.0",
+  "files": ["ime"],
+  "publishConfig": { "access": "public", "registry": "https://registry.npmjs.org" }
 }

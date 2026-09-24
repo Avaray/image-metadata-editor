@@ -1,17 +1,55 @@
 {
-    "name": "@avaray/ime",
-    "version": "1.5.0",
-    "description": "A fast, lightweight CLI for reading, writing, and wiping metadata from image files.",
-    "bin": { "ime": "bin.js" },
-    "repository": { "type": "git", "url": "git+https://github.com/Avaray/image-metadata-editor.git" },
-    "author": "Avaray",
-    "license": "CC-BY-NC-4.0",
-    "optionalDependencies": {
-        "@avaray/ime-win32-x64": "*",
-        "@avaray/ime-linux-x64": "*",
-        "@avaray/ime-linux-arm64": "*",
-        "@avaray/ime-linux-armv7": "*",
-        "@avaray/ime-macos-arm64": "*",
-        "@avaray/ime-macos-x64": "*"
-    }
+  "name": "@avaray/ime",
+  "version": "1.5.0",
+  "description": "A fast, lightweight CLI for reading, writing, and wiping metadata from image files.",
+  "bin": { "ime": "bin.js" },
+  "repository": { "type": "git", "url": "git+https://github.com/Avaray/image-metadata-editor.git" },
+  "author": "Dawid Wasowski <contact@dav.one>",
+  "homepage": "https://dav.one/image-metadata-editor/",
+  "license": "CC-BY-NC-4.0",
+  "keywords": [
+    "cli",
+    "metadata",
+    "exif",
+    "image",
+    "tool",
+    "jpeg",
+    "png",
+    "webp",
+    "heic",
+    "avif",
+    "tiff",
+    "cr3",
+    "raf",
+    "iiq",
+    "mp4",
+    "mov",
+    "mkv",
+    "webm",
+    "tui",
+    "terminal"
+  ],
+  "files": [
+    "bin.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "echo \"No tests for wrapper package\" && exit 0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "optionalDependencies": {
+    "@avaray/ime-win32-x64": "*",
+    "@avaray/ime-linux-x64": "*",
+    "@avaray/ime-linux-arm64": "*",
+    "@avaray/ime-linux-armv7": "*",
+    "@avaray/ime-macos-arm64": "*",
+    "@avaray/ime-macos-x64": "*"
+  }
 }
