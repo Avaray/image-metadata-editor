@@ -472,8 +472,16 @@ impl App {
         self.apply_search_filter();
 
         // Restore selection for current JSON path depth
-        if !self.json_path.is_empty() && self.json_path_selection.len() == self.json_path.len() {
-            let depth = self.json_path.len() - 1;
+        if self.json_path.is_empty() {
+            // At root level - restore root selection if available
+            if let Some(&saved_idx) = self.json_path_selection.get(0) {
+                if saved_idx < self.meta_keys.len() {
+                    self.meta_state.select(Some(saved_idx));
+                }
+            }
+        } else if self.json_path_selection.len() > self.json_path.len() {
+            // Inside nested JSON - restore selection for current depth
+            let depth = self.json_path.len();
             if let Some(&saved_idx) = self.json_path_selection.get(depth) {
                 if saved_idx < self.meta_keys.len() {
                     self.meta_state.select(Some(saved_idx));
@@ -596,6 +604,13 @@ impl App {
             None => 0,
         };
         self.meta_state.select(Some(i));
+        // Update selection for current JSON depth (current depth = json_path.len())
+        let depth = self.json_path.len();
+        if self.json_path_selection.len() > depth {
+            self.json_path_selection[depth] = i;
+        } else {
+            self.json_path_selection.push(i);
+        }
     }
 
     fn previous_meta(&mut self) {
@@ -613,6 +628,13 @@ impl App {
             None => 0,
         };
         self.meta_state.select(Some(i));
+        // Update selection for current JSON depth
+        let depth = self.json_path.len();
+        if self.json_path_selection.len() > depth {
+            self.json_path_selection[depth] = i;
+        } else {
+            self.json_path_selection.push(i);
+        }
     }
 
     fn has_pending_changes(&self) -> bool {
@@ -933,7 +955,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                                 if matches!(app.focus, Focus::Metadata) {
                                     if !app.json_path.is_empty() {
                                         app.json_path.pop();
-                                        app.json_path_selection.pop();
+                                        // Do NOT pop json_path_selection - parent's selection is at index json_path.len() (after pop)
                                         app.reload_meta_view();
                                     } else if !app.search_query.is_empty() {
                                         // Clear active search filter
@@ -974,7 +996,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                                 Focus::Metadata => {
                                     if !app.json_path.is_empty() {
                                         app.json_path.pop();
-                                        app.json_path_selection.pop();
+                                        // Do NOT pop json_path_selection - parent's selection is at index json_path.len() (after pop)
                                         app.reload_meta_view();
                                     } else {
                                         app.focus = Focus::FileList;
