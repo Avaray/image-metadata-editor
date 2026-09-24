@@ -358,6 +358,34 @@ jobs:
           name: ime-linux-amd64
           path: npm/ime-linux-x64/
 
+      - name: Download Linux arm64 binary
+        uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          name: ime-linux-arm64
+          path: npm/ime-linux-arm64/
+
+      - name: Download Linux armv7 binary
+        uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          name: ime-linux-armv7
+          path: npm/ime-linux-armv7/
+
+      - name: Download macOS arm64 binary
+        uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          name: ime-macos-arm64
+          path: npm/ime-macos-arm64/
+
+      - name: Download macOS amd64 binary
+        uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          name: ime-macos-amd64
+          path: npm/ime-macos-x64/
+
       - name: Download Windows binary
         uses: actions/download-artifact@v8
         continue-on-error: true
@@ -369,10 +397,32 @@ jobs:
         env:
           TAG_NAME: ${{ needs.check-version.outputs.version }}
         run: |
+          # Linux x64
           if [ -f npm/ime-linux-x64/ime-linux-amd64 ]; then
             mv npm/ime-linux-x64/ime-linux-amd64 npm/ime-linux-x64/ime
             chmod +x npm/ime-linux-x64/ime
           fi
+          # Linux ARM64
+          if [ -f npm/ime-linux-arm64/ime-linux-arm64 ]; then
+            mv npm/ime-linux-arm64/ime-linux-arm64 npm/ime-linux-arm64/ime
+            chmod +x npm/ime-linux-arm64/ime
+          fi
+          # Linux ARMv7
+          if [ -f npm/ime-linux-armv7/ime-linux-armv7 ]; then
+            mv npm/ime-linux-armv7/ime-linux-armv7 npm/ime-linux-armv7/ime
+            chmod +x npm/ime-linux-armv7/ime
+          fi
+          # macOS ARM64
+          if [ -f npm/ime-macos-arm64/ime-macos-arm64 ]; then
+            mv npm/ime-macos-arm64/ime-macos-arm64 npm/ime-macos-arm64/ime
+            chmod +x npm/ime-macos-arm64/ime
+          fi
+          # macOS x64
+          if [ -f npm/ime-macos-x64/ime-macos-amd64 ]; then
+            mv npm/ime-macos-x64/ime-macos-amd64 npm/ime-macos-x64/ime
+            chmod +x npm/ime-macos-x64/ime
+          fi
+          # Windows x64
           if [ -f npm/ime-win32-x64/ime-windows-amd64.exe ]; then
             mv npm/ime-win32-x64/ime-windows-amd64.exe npm/ime-win32-x64/ime.exe
           fi
@@ -385,10 +435,38 @@ jobs:
             jq ".version = \"$VERSION\"" "$pkg" > "$tmp" && mv "$tmp" "$pkg"
           done
 
-      - name: Publish Linux Package
+      - name: Publish Linux x64 Package
         if: hashFiles('npm/ime-linux-x64/ime') != ''
         run: npm publish --provenance --access public
         working-directory: npm/ime-linux-x64
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish Linux ARM64 Package
+        if: hashFiles('npm/ime-linux-arm64/ime') != ''
+        run: npm publish --provenance --access public
+        working-directory: npm/ime-linux-arm64
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish Linux ARMv7 Package
+        if: hashFiles('npm/ime-linux-armv7/ime') != ''
+        run: npm publish --provenance --access public
+        working-directory: npm/ime-linux-armv7
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish macOS ARM64 Package
+        if: hashFiles('npm/ime-macos-arm64/ime') != ''
+        run: npm publish --provenance --access public
+        working-directory: npm/ime-macos-arm64
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish macOS x64 Package
+        if: hashFiles('npm/ime-macos-x64/ime') != ''
+        run: npm publish --provenance --access public
+        working-directory: npm/ime-macos-x64
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 

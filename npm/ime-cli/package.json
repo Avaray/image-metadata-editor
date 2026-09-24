@@ -1,6 +1,6 @@
 {
   "name": "@avaray/ime",
-  "version": "1.1.0",
+  "version": "1.5.0",
   "description": "Blazing fast image metadata (EXIF/WebP) reader and editor.",
   "bin": {
     "ime": "bin.js"
@@ -13,6 +13,10 @@
   "license": "MIT",
   "optionalDependencies": {
     "@avaray/ime-win32-x64": "*",
-    "@avaray/ime-linux-x64": "*"
+    "@avaray/ime-linux-x64": "*",
+    "@avaray/ime-linux-arm64": "*",
+    "@avaray/ime-linux-armv7": "*",
+    "@avaray/ime-macos-arm64": "*",
+    "@avaray/ime-macos-x64": "*"
   }
 }

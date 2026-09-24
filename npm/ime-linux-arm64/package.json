@@ -1,9 +1,9 @@
 {
-  "name": "@avaray/ime-win32-x64",
+  "name": "@avaray/ime-linux-arm64",
   "version": "1.5.0",
-  "description": "Windows x64 binary for @avaray/ime",
-  "os": ["win32"],
-  "cpu": ["x64"],
+  "description": "Linux ARM64 binary for @avaray/ime",
+  "os": ["linux"],
+  "cpu": ["arm64"],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Avaray/image-metadata-editor.git"

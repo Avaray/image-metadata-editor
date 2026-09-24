@@ -1,8 +1,8 @@
 {
-  "name": "@avaray/ime-win32-x64",
+  "name": "@avaray/ime-macos-x64",
   "version": "1.5.0",
-  "description": "Windows x64 binary for @avaray/ime",
-  "os": ["win32"],
+  "description": "macOS x64 binary for @avaray/ime",
+  "os": ["darwin"],
   "cpu": ["x64"],
   "repository": {
     "type": "git",
