@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-09-24
+
+### Added
+- **CLI**: Allow launching TUI mode without a file argument (`-t` / `--tui` now defaults to the current directory).
+
+### Fixed
+- **TUI**: Strip Windows verbatim path prefixes (`\\?\`) to restore proper "go up" directory navigation.
+- **TUI**: Rename virtual root label to "Devices & Drives" for a consistent cross-platform display.
+
+### Changed
+- **CI**: Add native macOS build targets for both `arm64` (Apple Silicon) and `x86_64` (Intel).
+- **CI**: Add ARM Linux targets (`arm64`, `armv7`) and rework the manual publication workflow.
+- **CI**: Add caching for `pip` packages in ARM build jobs.
+- **CI**: Add manual binary selection inputs to trigger builds for specific platforms in `release.yml`.
+
 ## [1.4.0] - 2026-09-24
 
 ### Added
