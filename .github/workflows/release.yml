@@ -124,6 +124,12 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
+      - name: Cache pip packages (cargo-zigbuild / ziglang)
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/pip
+          key: cargo-zigbuild-pip-v1
+
       - name: Install cargo-zigbuild (bundles Zig via pip)
         run: pip install cargo-zigbuild --break-system-packages
 
