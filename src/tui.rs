@@ -120,6 +120,7 @@ enum AppState {
 struct App {
     current_dir: PathBuf,
     files: Vec<PathBuf>,
+    file_display_items: Vec<String>,
     file_state: ListState,
 
     current_metadata: Option<BTreeMap<String, String>>,
@@ -155,6 +156,7 @@ impl App {
         let mut app = App {
             current_dir,
             files: Vec::new(),
+            file_display_items: Vec::new(),
             file_state: ListState::default(),
             current_metadata: None,
             meta_state: ListState::default(),
@@ -229,10 +231,10 @@ impl App {
         }
 
         self.files.sort_by(|a, b| {
-            let a_is_dotdot = a.file_name().unwrap_or_default() == "..";
-            let b_is_dotdot = b.file_name().unwrap_or_default() == "..";
-            let a_is_root = a.file_name().map_or(false, |n| is_root_marker(n));
-            let b_is_root = b.file_name().map_or(false, |n| is_root_marker(n));
+            let a_is_dotdot = App::path_is_dotdot(a);
+            let b_is_dotdot = App::path_is_dotdot(b);
+            let a_is_root = is_path_drive_root(a);
+            let b_is_root = is_path_drive_root(b);
 
             // Root markers (drives) come first
             if a_is_root && !b_is_root {
@@ -255,23 +257,44 @@ impl App {
                 }
             }
         });
+
+        self.file_display_items.clear();
+        for p in &self.files {
+            let name = if App::path_is_dotdot(p) {
+                "..".to_string()
+            } else if self.explorer_mode && is_path_drive_root(p) {
+                p.to_string_lossy().into_owned()
+            } else {
+                p.file_name().unwrap_or_default().to_string_lossy().into_owned()
+            };
+            
+            let mut prefix = "";
+            if self.explorer_mode {
+                if name == ".." {
+                    prefix = "\u{f060} ";
+                } else if p.is_dir() || is_path_drive_root(p) {
+                    prefix = "\u{f07b} ";
+                } else if let Some(ext) = p.extension().and_then(|e| e.to_str()).map(|s| s.to_lowercase()) {
+                    if matches!(ext.as_str(), "jpg" | "jpeg" | "png" | "webp" | "heic" | "heif" | "avif" | "tiff" | "tif" | "cr3" | "raf" | "iiq") {
+                        prefix = "\u{f1c5} ";
+                    } else if matches!(ext.as_str(), "mp4" | "mov" | "3gp" | "mkv" | "webm") {
+                        prefix = "\u{f03d} ";
+                    } else {
+                        prefix = "\u{f15b} ";
+                    }
+                } else {
+                    prefix = "\u{f15b} ";
+                }
+            }
+            self.file_display_items.push(format!("{}{}", prefix, name));
+        }
+
         Ok(())
     }
 
     /// Check if current_dir is at a drive root (e.g., C:\ on Windows, / on Unix)
     fn is_at_drive_root(&self) -> bool {
-        #[cfg(windows)]
-        {
-            // On Windows C:\ has a Prefix component + RootDir = 2 components total.
-            // The simplest reliable check is the trailing backslash on a single-letter drive.
-            let s = self.current_dir.to_string_lossy();
-            s.len() == 3 && s.chars().nth(0).map_or(false, |c| c.is_ascii_alphabetic()) && s.chars().nth(1) == Some(':') && (s.chars().nth(2) == Some('\\') || s.chars().nth(2) == Some('/'))
-        }
-        #[cfg(not(windows))]
-        {
-            // On Unix, root is /
-            self.current_dir == PathBuf::from("/")
-        }
+        is_path_drive_root(&self.current_dir)
     }
 
     /// Returns true if the given path is the virtual `..` entry (go-up sentinel).
@@ -328,7 +351,7 @@ impl App {
             self.file_state.select(if self.files.is_empty() { None } else { Some(0) });
             self.load_selected_metadata();
         } else if path != self.current_dir {
-            if !is_root_marker(&fname) {
+            if !is_path_drive_root(&path) {
                 self.last_selected_dir = Some(fname.into());
             }
             self.current_dir = path;
@@ -613,7 +636,7 @@ impl App {
     fn is_read_only(&self) -> bool {
         if let Some(idx) = self.file_state.selected() {
             if let Some(path) = self.files.get(idx) {
-                if path.is_dir() || App::path_is_dotdot(path) || is_root_marker(path.file_name().unwrap_or_default()) {
+                if path.is_dir() || App::path_is_dotdot(path) || is_path_drive_root(&path) {
                     return true;
                 }
                 if let Some(ext) = path.extension().and_then(|e| e.to_str()).map(|s| s.to_lowercase()) {
@@ -629,7 +652,7 @@ impl App {
     fn is_navigable_dir(&self) -> bool {
         if let Some(idx) = self.file_state.selected() {
             if let Some(path) = self.files.get(idx) {
-                return path.is_dir() || App::path_is_dotdot(path) || is_root_marker(path.file_name().unwrap_or_default());
+                return path.is_dir() || App::path_is_dotdot(path) || is_path_drive_root(&path);
             }
         }
         false
@@ -691,17 +714,15 @@ fn get_roots() -> Vec<PathBuf> {
 }
 
 /// Check if a filename is a root marker (drive letter or /)
-fn is_root_marker(name: &std::ffi::OsStr) -> bool {
-    let s = name.to_string_lossy();
+fn is_path_drive_root(path: &std::path::Path) -> bool {
     #[cfg(windows)]
     {
-        // Windows drive format: "C:" (file_name of "C:\" returns "C:")
-        s.len() >= 2 && s.chars().nth(1) == Some(':') && s.chars().nth(0).map_or(false, |c| c.is_ascii_alphabetic())
+        let s = path.to_string_lossy();
+        s.len() == 3 && s.chars().nth(0).map_or(false, |c| c.is_ascii_alphabetic()) && s.chars().nth(1) == Some(':') && (s.chars().nth(2) == Some('\\') || s.chars().nth(2) == Some('/'))
     }
     #[cfg(not(windows))]
     {
-        // Unix root
-        s == "/"
+        path == std::path::Path::new("/")
     }
 }
 
@@ -896,7 +917,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                                             if let Some(path) = app.files.get(idx).cloned() {
                                                 if App::path_is_dotdot(&path) {
                                                     // ".." entry — Right does nothing; use Left or Enter to go up.
-                                                } else if path.is_dir() || is_root_marker(path.file_name().unwrap_or_default()) {
+                                                } else if path.is_dir() || is_path_drive_root(&path) {
                                                     app.navigate_into(path);
                                                 } else {
                                                     // Regular file — move focus to metadata panel.
@@ -929,7 +950,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                                                     // ".." sentinel — go up.
                                                     app.navigate_up();
                                                     continue;
-                                                } else if path.is_dir() || is_root_marker(path.file_name().unwrap_or_default()) {
+                                                } else if path.is_dir() || is_path_drive_root(&path) {
                                                     app.navigate_into(path);
                                                     continue;
                                                 }
@@ -1303,48 +1324,14 @@ fn ui(f: &mut Frame, app: &mut App) {
     let top_chunks = Layout::default().direction(Direction::Horizontal).constraints([Constraint::Percentage(30), Constraint::Percentage(70)].as_ref()).split(main_area);
 
     // ── Left: File List ──
-    let files: Vec<ListItem> = app
-        .files
-        .iter()
-        .map(|p| {
-            // Resolve display name explicitly to avoid file_name() returning None
-            // for drive roots (C:\) or the ".." sentinel.
-            let name = if App::path_is_dotdot(p) {
-                "..".to_string()
-            } else if app.explorer_mode && is_root_marker(p.file_name().unwrap_or_default()) {
-                // file_name() returns None for paths like "C:\"; use the full path string.
-                p.to_string_lossy().into_owned()
-            } else {
-                p.file_name().unwrap_or_default().to_string_lossy().into_owned()
-            };
-            let mut prefix = "";
-            if app.explorer_mode {
-                if name == ".." {
-                    prefix = "\u{f060} "; // 
-                } else if p.is_dir() || is_root_marker(p.file_name().unwrap_or_default()) {
-                    prefix = "\u{f07b} "; //  (folder icon for directories and roots)
-                } else if let Some(ext) = p.extension().and_then(|e| e.to_str()).map(|s| s.to_lowercase()) {
-                    if matches!(ext.as_str(), "jpg" | "jpeg" | "png" | "webp" | "heic" | "heif" | "avif" | "tiff" | "tif" | "cr3" | "raf" | "iiq") {
-                        prefix = "\u{f1c5} "; // 
-                    } else if matches!(ext.as_str(), "mp4" | "mov" | "3gp" | "mkv" | "webm") {
-                        prefix = "\u{f03d} "; // 
-                    } else {
-                        prefix = "\u{f15b} "; // 
-                    }
-                } else {
-                    prefix = "\u{f15b} "; // 
-                }
-            }
-            ListItem::new(format!("{}{}", prefix, name))
-        })
-        .collect();
+    let files_iter = app.file_display_items.iter().map(|name| ListItem::new(name.as_str()));
 
     let mut file_block = Block::default().borders(Borders::ALL).title(" Files ");
     if matches!(app.focus, Focus::FileList) {
         file_block = file_block.style(Style::default().fg(Color::Yellow));
     }
 
-    let file_list = List::new(files).block(file_block).highlight_style(Style::default().add_modifier(Modifier::REVERSED));
+    let file_list = List::new(files_iter).block(file_block).highlight_style(Style::default().add_modifier(Modifier::REVERSED));
 
     f.render_stateful_widget(file_list, top_chunks[0], &mut app.file_state);
 
