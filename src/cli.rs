@@ -92,6 +92,13 @@ pub fn parse_args() -> Result<CliResult, lexopt::Error> {
 
     match file {
         Some(f) => Ok(CliResult::Args(Args { file: f, key, output, strip, set, set_json, delete, recursive, directory, tui, power_user, explorer_mode })),
-        None => Err(lexopt::Error::MissingValue { option: Some("file".to_string()) }),
+        None => {
+            if tui {
+                // In TUI mode, default to current directory if no file specified
+                Ok(CliResult::Args(Args { file: ".".to_string(), key, output, strip, set, set_json, delete, recursive, directory, tui, power_user, explorer_mode }))
+            } else {
+                Err(lexopt::Error::MissingValue { option: Some("file".to_string()) })
+            }
+        }
     }
 }
