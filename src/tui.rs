@@ -1289,12 +1289,15 @@ fn ui(f: &mut Frame, app: &mut App) {
         .files
         .iter()
         .map(|p| {
-            let fname = p.file_name().unwrap_or_default();
-            let name = if app.explorer_mode && is_root_marker(&fname) {
-                // Show proper drive names (C:\, D:\, etc.) instead of just C:, D:
+            // Resolve display name explicitly to avoid file_name() returning None
+            // for drive roots (C:\) or the ".." sentinel.
+            let name = if App::path_is_dotdot(p) {
+                "..".to_string()
+            } else if app.explorer_mode && is_root_marker(p.file_name().unwrap_or_default()) {
+                // file_name() returns None for paths like "C:\"; use the full path string.
                 p.to_string_lossy().into_owned()
             } else {
-                fname.to_string_lossy().into_owned()
+                p.file_name().unwrap_or_default().to_string_lossy().into_owned()
             };
             let mut prefix = "";
             if app.explorer_mode {
