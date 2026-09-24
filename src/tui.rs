@@ -1360,13 +1360,14 @@ fn ui(f: &mut Frame, app: &mut App) {
     // ── Top: Path Bar (Explorer Mode) ──
     if app.explorer_mode {
         let path_display = if app.at_virtual_root {
+            // Need to consider something better than "Devices & Drives" for both cases
             #[cfg(windows)]
             {
                 "Devices & Drives".to_string()
             }
             #[cfg(not(windows))]
             {
-                "Computer".to_string()
+                "Devices & Drives".to_string()
             }
         } else {
             // current_dir is already normalized (no `\\?\` prefix), so no disk access is needed here.
