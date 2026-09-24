@@ -151,7 +151,13 @@ struct App {
 
 impl App {
     fn new(start_path: PathBuf, power_user: bool, explorer_mode: bool) -> Result<Self, AppError> {
-        let (current_dir, initial_file) = if start_path.is_dir() { (start_path.clone(), None) } else { (start_path.parent().unwrap_or_else(|| std::path::Path::new("")).to_path_buf(), Some(start_path.clone())) };
+        // Canonicalize the path to ensure proper navigation (handles "." and resolves symlinks).
+        // On Windows canonicalize() returns an extended-length path (`\\?\D:\...`). Such paths
+        // are "verbatim": `join("..")` on them collapses instead of appending `..`, and they
+        // never compare equal to the `D:\` paths from get_roots(). Strip the prefix so the whole
+        // navigation logic works on one consistent, normal path form.
+        let canonical_path = strip_verbatim_prefix(start_path.canonicalize().unwrap_or(start_path));
+        let (current_dir, initial_file) = if canonical_path.is_dir() { (canonical_path.clone(), None) } else { (canonical_path.parent().unwrap_or_else(|| std::path::Path::new("")).to_path_buf(), Some(canonical_path.clone())) };
 
         let mut app = App {
             current_dir,
@@ -208,10 +214,10 @@ impl App {
                 return Ok(());
             } else if self.is_at_drive_root() {
                 // At a drive root (e.g., C:\) - show ".." to go up to virtual root.
-                self.files.push(self.current_dir.join(".."));
+                self.files.push(go_up_entry(&self.current_dir));
             } else if let Some(parent) = self.current_dir.parent() {
                 if !parent.as_os_str().is_empty() {
-                    self.files.push(self.current_dir.join(".."));
+                    self.files.push(go_up_entry(&self.current_dir));
                 }
             }
         }
@@ -298,13 +304,14 @@ impl App {
     }
 
     /// Check if current_dir is at a drive root (e.g., C:\ on Windows, / on Unix)
+    /// A path with no parent (e.g. a UNC share root) is also treated as a top-level root.
     fn is_at_drive_root(&self) -> bool {
-        is_path_drive_root(&self.current_dir)
+        is_path_drive_root(&self.current_dir) || (!self.current_dir.as_os_str().is_empty() && self.current_dir.parent().is_none())
     }
 
     /// Returns true if the given path is the virtual `..` entry (go-up sentinel).
     fn path_is_dotdot(path: &PathBuf) -> bool {
-        path.ends_with("..")
+        matches!(path.components().next_back(), Some(std::path::Component::ParentDir))
     }
 
     /// Navigate one level up (mirrors the `..` action). Works on both platforms.
@@ -698,6 +705,46 @@ fn get_json_at_path_mut<'a>(val: &'a mut serde_json::Value, path: &[String]) -> 
     Some(curr)
 }
 
+/// Pure string logic behind `strip_verbatim_prefix` (kept platform-independent so it can be unit-tested anywhere).
+/// `\\?\D:\dir`      -> `D:\dir`
+/// `\\?\UNC\srv\shr` -> `\\srv\shr`
+/// Other verbatim forms (e.g. `\\?\Volume{...}`) are left untouched (returns None).
+#[cfg_attr(not(windows), allow(dead_code))]
+fn strip_verbatim_str(s: &str) -> Option<String> {
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        return Some(format!(r"\\{}", rest));
+    }
+    let rest = s.strip_prefix(r"\\?\")?;
+    let b = rest.as_bytes();
+    if b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':' { Some(rest.to_string()) } else { None }
+}
+
+/// Removes the Windows extended-length prefix (`\\?\`) that `Path::canonicalize()` adds.
+/// No-op on other platforms and for paths that are not valid UTF-8.
+fn strip_verbatim_prefix(path: PathBuf) -> PathBuf {
+    #[cfg(windows)]
+    {
+        if let Some(clean) = path.to_str().and_then(strip_verbatim_str) {
+            return PathBuf::from(clean);
+        }
+    }
+    path
+}
+
+/// Builds the virtual "go up" entry for `dir` (`<dir>\..`).
+/// Deliberately NOT `dir.join("..")`: on Windows `PathBuf::push` silently collapses `..`
+/// for verbatim (`\\?\`) paths, which turned the entry into the parent directory itself
+/// (or into the drive root `\\?\D:\` when already at the root).
+fn go_up_entry(dir: &std::path::Path) -> PathBuf {
+    let mut s = dir.as_os_str().to_os_string();
+    let ends_with_sep = dir.to_str().map_or(false, |d| d.ends_with(std::path::is_separator));
+    if !ends_with_sep {
+        s.push(std::path::MAIN_SEPARATOR.to_string());
+    }
+    s.push("..");
+    PathBuf::from(s)
+}
+
 /// Returns a list of root paths (drives on Windows, / on Unix)
 fn get_roots() -> Vec<PathBuf> {
     #[cfg(windows)]
@@ -723,7 +770,9 @@ fn is_path_drive_root(path: &std::path::Path) -> bool {
     #[cfg(windows)]
     {
         let s = path.to_string_lossy();
-        s.len() == 3 && s.chars().nth(0).map_or(false, |c| c.is_ascii_alphabetic()) && s.chars().nth(1) == Some(':') && (s.chars().nth(2) == Some('\\') || s.chars().nth(2) == Some('/'))
+        // Check for both regular (D:\) and extended-length (\\?\D:\) formats
+        let stripped = s.strip_prefix(r"\\?\").unwrap_or(&s);
+        stripped.len() == 3 && stripped.chars().nth(0).map_or(false, |c| c.is_ascii_alphabetic()) && stripped.chars().nth(1) == Some(':') && (stripped.chars().nth(2) == Some('\\') || stripped.chars().nth(2) == Some('/'))
     }
     #[cfg(not(windows))]
     {
@@ -1313,14 +1362,15 @@ fn ui(f: &mut Frame, app: &mut App) {
         let path_display = if app.at_virtual_root {
             #[cfg(windows)]
             {
-                "This PC".to_string()
+                "Devices & Drives".to_string()
             }
             #[cfg(not(windows))]
             {
                 "Computer".to_string()
             }
         } else {
-            app.current_dir.to_string_lossy().into_owned()
+            // current_dir is already normalized (no `\\?\` prefix), so no disk access is needed here.
+            strip_verbatim_prefix(app.current_dir.clone()).to_string_lossy().into_owned()
         };
         let path_bar = Paragraph::new(path_display).block(Block::default().borders(Borders::ALL).title(" Path ")).style(Style::default().fg(Color::Cyan));
         f.render_widget(path_bar, vertical_chunks[0]);
