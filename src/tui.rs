@@ -276,7 +276,7 @@ impl App {
 
     /// Returns true if the given path is the virtual `..` entry (go-up sentinel).
     fn path_is_dotdot(path: &PathBuf) -> bool {
-        path.file_name().map(|n| n == "..").unwrap_or(false)
+        path.ends_with("..")
     }
 
     /// Navigate one level up (mirrors the `..` action). Works on both platforms.
@@ -287,10 +287,18 @@ impl App {
         }
         if self.is_at_drive_root() {
             // Go up from a drive root to the virtual root (drive list).
+            let previous_drive = self.current_dir.clone();
+
             self.at_virtual_root = true;
             self.current_dir = PathBuf::from(""); // dummy — not used while at_virtual_root
             let _ = self.load_files();
-            self.file_state.select(if self.files.is_empty() { None } else { Some(0) });
+
+            // Try to restore selection to the drive we just came from.
+            let mut selected_idx = if self.files.is_empty() { None } else { Some(0) };
+            if let Some(idx) = self.files.iter().position(|p| p == &previous_drive) {
+                selected_idx = Some(idx);
+            }
+            self.file_state.select(selected_idx);
             self.load_selected_metadata();
         } else if let Some(parent) = self.current_dir.parent() {
             let previous_dir_name = self.current_dir.file_name().and_then(|n| n.to_str()).map(|s| s.to_string());
@@ -605,7 +613,7 @@ impl App {
     fn is_read_only(&self) -> bool {
         if let Some(idx) = self.file_state.selected() {
             if let Some(path) = self.files.get(idx) {
-                if path.is_dir() || path.file_name().unwrap_or_default() == ".." {
+                if path.is_dir() || App::path_is_dotdot(path) || is_root_marker(path.file_name().unwrap_or_default()) {
                     return true;
                 }
                 if let Some(ext) = path.extension().and_then(|e| e.to_str()).map(|s| s.to_lowercase()) {
@@ -615,6 +623,16 @@ impl App {
             }
         }
         true
+    }
+
+    /// Returns true if the selected item is a navigable directory, drive root, or the '..' virtual folder.
+    fn is_navigable_dir(&self) -> bool {
+        if let Some(idx) = self.file_state.selected() {
+            if let Some(path) = self.files.get(idx) {
+                return path.is_dir() || App::path_is_dotdot(path) || is_root_marker(path.file_name().unwrap_or_default());
+            }
+        }
+        false
     }
 }
 
@@ -1336,7 +1354,7 @@ fn ui(f: &mut Frame, app: &mut App) {
 
         let mut spans = vec![Span::raw(base)];
 
-        if app.is_read_only() {
+        if app.is_read_only() && !app.is_navigable_dir() {
             spans.push(Span::styled(" [READ ONLY]", Style::default().add_modifier(Modifier::DIM)));
         }
 
@@ -1366,7 +1384,13 @@ fn ui(f: &mut Frame, app: &mut App) {
 
     let mut meta_items = Vec::new();
     if app.meta_keys.is_empty() {
-        let msg = if !app.search_query.is_empty() { "No matching metadata entries.".to_string() } else { "No metadata or invalid file.".to_string() };
+        let msg = if !app.search_query.is_empty() {
+            "No matching metadata entries.".to_string()
+        } else if app.is_navigable_dir() {
+            "".to_string() // Don't show confusing error for directories
+        } else {
+            "No metadata or invalid file.".to_string()
+        };
         meta_items.push(ListItem::new(msg));
     } else {
         for key in &app.meta_keys {
