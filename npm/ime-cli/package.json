@@ -1,22 +1,17 @@
 {
-  "name": "@avaray/ime",
-  "version": "1.5.0",
-  "description": "Blazing fast image metadata (EXIF/WebP) reader and editor.",
-  "bin": {
-    "ime": "bin.js"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Avaray/image-metadata-editor.git"
-  },
-  "author": "Avaray",
-  "license": "MIT",
-  "optionalDependencies": {
-    "@avaray/ime-win32-x64": "*",
-    "@avaray/ime-linux-x64": "*",
-    "@avaray/ime-linux-arm64": "*",
-    "@avaray/ime-linux-armv7": "*",
-    "@avaray/ime-macos-arm64": "*",
-    "@avaray/ime-macos-x64": "*"
-  }
+    "name": "@avaray/ime",
+    "version": "1.5.0",
+    "description": "A fast, lightweight CLI for reading, writing, and wiping metadata from image files.",
+    "bin": { "ime": "bin.js" },
+    "repository": { "type": "git", "url": "git+https://github.com/Avaray/image-metadata-editor.git" },
+    "author": "Avaray",
+    "license": "CC-BY-NC-4.0",
+    "optionalDependencies": {
+        "@avaray/ime-win32-x64": "*",
+        "@avaray/ime-linux-x64": "*",
+        "@avaray/ime-linux-arm64": "*",
+        "@avaray/ime-linux-armv7": "*",
+        "@avaray/ime-macos-arm64": "*",
+        "@avaray/ime-macos-x64": "*"
+    }
 }

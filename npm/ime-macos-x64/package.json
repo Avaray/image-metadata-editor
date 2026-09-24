@@ -1,13 +1,10 @@
 {
-  "name": "@avaray/ime-macos-x64",
-  "version": "1.5.0",
-  "description": "macOS x64 binary for @avaray/ime",
-  "os": ["darwin"],
-  "cpu": ["x64"],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Avaray/image-metadata-editor.git"
-  },
-  "author": "Avaray",
-  "license": "MIT"
+    "name": "@avaray/ime-macos-x64",
+    "version": "1.5.0",
+    "description": "macOS x64 binary for @avaray/ime",
+    "os": [ "darwin" ],
+    "cpu": [ "x64" ],
+    "repository": { "type": "git", "url": "git+https://github.com/Avaray/image-metadata-editor.git" },
+    "author": "Avaray",
+    "license": "CC-BY-NC-4.0"
 }
