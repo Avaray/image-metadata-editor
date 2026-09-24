@@ -657,7 +657,7 @@ impl App {
                 return true;
             }
         }
-        true
+        false
     }
 
     /// Returns true if the selected item is a navigable directory, drive root, or the '..' virtual folder.
@@ -1429,6 +1429,8 @@ fn ui(f: &mut Frame, app: &mut App) {
     if app.meta_keys.is_empty() {
         let msg = if !app.search_query.is_empty() {
             "No matching metadata entries.".to_string()
+        } else if app.files.is_empty() || app.file_state.selected().is_none() {
+            "No file selected.".to_string()
         } else if app.is_navigable_dir() {
             "".to_string() // Don't show confusing error for directories
         } else {
