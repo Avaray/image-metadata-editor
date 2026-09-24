@@ -137,6 +137,8 @@ struct App {
     /// Brief status message shown in the help bar (e.g. "Copied!" / "Deleted")
     status_msg: Option<String>,
     json_path: Vec<String>,
+    /// Stores the selected index for each level of json_path
+    json_path_selection: Vec<usize>,
 
     focus: Focus,
     state: AppState,
@@ -174,6 +176,7 @@ impl App {
             pending_deletes: std::collections::BTreeSet::new(),
             status_msg: None,
             json_path: Vec::new(),
+            json_path_selection: Vec::new(),
             focus: Focus::FileList,
             state: AppState::Normal,
             should_quit: false,
@@ -379,6 +382,7 @@ impl App {
         self.pending_deletes.clear();
         self.status_msg = None;
         self.json_path.clear();
+        self.json_path_selection.clear();
         self.search_query.clear();
         self.all_meta_keys.clear();
 
@@ -460,11 +464,22 @@ impl App {
 
             if !valid {
                 self.json_path.clear();
+                self.json_path_selection.clear();
                 return self.reload_meta_view();
             }
         }
 
         self.apply_search_filter();
+
+        // Restore selection for current JSON path depth
+        if !self.json_path.is_empty() && self.json_path_selection.len() == self.json_path.len() {
+            let depth = self.json_path.len() - 1;
+            if let Some(&saved_idx) = self.json_path_selection.get(depth) {
+                if saved_idx < self.meta_keys.len() {
+                    self.meta_state.select(Some(saved_idx));
+                }
+            }
+        }
     }
 
     fn apply_search_filter(&mut self) {
@@ -918,6 +933,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                                 if matches!(app.focus, Focus::Metadata) {
                                     if !app.json_path.is_empty() {
                                         app.json_path.pop();
+                                        app.json_path_selection.pop();
                                         app.reload_meta_view();
                                     } else if !app.search_query.is_empty() {
                                         // Clear active search filter
@@ -958,6 +974,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                                 Focus::Metadata => {
                                     if !app.json_path.is_empty() {
                                         app.json_path.pop();
+                                        app.json_path_selection.pop();
                                         app.reload_meta_view();
                                     } else {
                                         app.focus = Focus::FileList;
@@ -989,6 +1006,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                                             let val = app.meta_values.get(&tag).cloned().unwrap_or_default();
                                             if is_drillable_json(&val) {
                                                 app.json_path.push(tag);
+                                                app.json_path_selection.push(idx);
                                                 app.reload_meta_view();
                                             }
                                         }
@@ -1019,6 +1037,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<(), A
                                             let val = app.meta_values.get(&tag).cloned().unwrap_or_default();
                                             if is_drillable_json(&val) {
                                                 app.json_path.push(tag);
+                                                app.json_path_selection.push(idx);
                                                 app.reload_meta_view();
                                             } else if app.is_read_only() {
                                                 app.status_msg = Some("Cannot edit read-only file format".to_string());
