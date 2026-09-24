@@ -11,7 +11,7 @@ on:
         required: true
         type: string
       full_publish:
-        description: 'Perform a full release (crates.io + NPM).'
+        description: 'Wykonaj pełną publikację (crates.io + npm)'
         required: false
         type: boolean
         default: false
@@ -145,6 +145,46 @@ jobs:
           name: ${{ matrix.artifact }}
           path: target/${{ matrix.target }}/release/${{ matrix.artifact }}
 
+  build-macos:
+    name: Build macOS (${{ matrix.target }})
+    runs-on: macos-latest
+    needs: check-version
+    if: needs.check-version.outputs.is_new_version == 'true'
+    strategy:
+      matrix:
+        include:
+          # Apple Silicon (M1 and newer)
+          - target: aarch64-apple-darwin
+            artifact: ime-macos-arm64
+          # Intel Macs
+          - target: x86_64-apple-darwin
+            artifact: ime-macos-amd64
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo registry and build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Rename binary for upload
+        run: mv target/${{ matrix.target }}/release/ime target/${{ matrix.target }}/release/${{ matrix.artifact }}
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: target/${{ matrix.target }}/release/${{ matrix.artifact }}
+
   build-windows:
     name: Build Windows (x86_64-msvc)
     runs-on: ubuntu-latest
@@ -198,7 +238,7 @@ jobs:
   create-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [check-version, build-linux, build-linux-arm, build-windows]
+    needs: [check-version, build-linux, build-linux-arm, build-macos, build-windows]
     if: needs.check-version.outputs.is_new_version == 'true'
     steps:
       - name: Download Linux binary
@@ -219,6 +259,18 @@ jobs:
           name: ime-linux-armv7
           path: dist/
 
+      - name: Download macOS arm64 binary
+        uses: actions/download-artifact@v8
+        with:
+          name: ime-macos-arm64
+          path: dist/
+
+      - name: Download macOS amd64 binary
+        uses: actions/download-artifact@v8
+        with:
+          name: ime-macos-amd64
+          path: dist/
+
       - name: Download Windows binary
         uses: actions/download-artifact@v8
         with:
@@ -233,13 +285,15 @@ jobs:
             dist/ime-linux-amd64
             dist/ime-linux-arm64
             dist/ime-linux-armv7
+            dist/ime-macos-arm64
+            dist/ime-macos-amd64
             dist/ime-windows-amd64.exe
           generate_release_notes: true
 
   publish-crate:
     name: Publish to crates.io
     runs-on: ubuntu-latest
-    needs: [check-version, build-linux, build-linux-arm, build-windows]
+    needs: [check-version, build-linux, build-linux-arm, build-macos, build-windows]
     if: needs.check-version.outputs.is_new_version == 'true' && (github.event_name != 'workflow_dispatch' || github.event.inputs.full_publish == 'true')
     steps:
       - name: Checkout repository
@@ -262,7 +316,7 @@ jobs:
   publish-npm:
     name: Publish to NPM
     runs-on: ubuntu-latest
-    needs: [check-version, build-linux, build-linux-arm, build-windows]
+    needs: [check-version, build-linux, build-linux-arm, build-macos, build-windows]
     if: needs.check-version.outputs.is_new_version == 'true' && (github.event_name != 'workflow_dispatch' || github.event.inputs.full_publish == 'true')
     permissions:
       contents: read
