@@ -204,6 +204,7 @@ impl App {
                 }
                 // Sort drives and return early — no read_dir needed.
                 self.files.sort_by(|a, b| a.cmp(b));
+                self.update_file_display_items();
                 return Ok(());
             } else if self.is_at_drive_root() {
                 // At a drive root (e.g., C:\) - show ".." to go up to virtual root.
@@ -258,6 +259,12 @@ impl App {
             }
         });
 
+        self.update_file_display_items();
+
+        Ok(())
+    }
+
+    fn update_file_display_items(&mut self) {
         self.file_display_items.clear();
         for p in &self.files {
             let name = if App::path_is_dotdot(p) {
@@ -288,8 +295,6 @@ impl App {
             }
             self.file_display_items.push(format!("{}{}", prefix, name));
         }
-
-        Ok(())
     }
 
     /// Check if current_dir is at a drive root (e.g., C:\ on Windows, / on Unix)
