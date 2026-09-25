@@ -401,6 +401,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
+      - name: Sync README and LICENSE to npm package
+        run: |
+          cp README.md npm/ime-cli/README.md
+          cp LICENSE npm/ime-cli/LICENSE
+
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
