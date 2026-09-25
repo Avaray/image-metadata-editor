@@ -261,6 +261,11 @@ jobs:
     needs: [check-version, build-linux, build-linux-arm, build-macos, build-windows]
     if: needs.check-version.outputs.is_new_version == 'true' && !failure() && !cancelled()
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
       - name: Download Linux binary
         uses: actions/download-artifact@v8
         continue-on-error: true
@@ -318,16 +323,46 @@ jobs:
           done
           echo "EOF" >> $GITHUB_OUTPUT
 
+      - name: Generate commit changelog
+        id: changelog
+        shell: bash
+        run: |
+          TARGET_TAG="${{ needs.check-version.outputs.version }}"
+          
+          # Find previous tag matching strictly "vX.Y.Z" format (e.g. v1.0.0), ignoring suffixes like v1.0.0-test
+          PREV_TAG=$(git tag -l --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | grep -v "^${TARGET_TAG}$" | head -n 1)
+          
+          if [ -n "$PREV_TAG" ]; then
+            echo "Fetching commits between $PREV_TAG and HEAD"
+            COMMIT_RANGE="${PREV_TAG}..HEAD"
+          else
+            echo "No previous release tag found. Fetching full history."
+            COMMIT_RANGE="HEAD"
+          fi
+          
+          # Filter Conventional Commits (feat, fix, perf, refactor, revert)
+          CHANGES=$(git log $COMMIT_RANGE --pretty=format:"- %s (%h)" | grep -iE "^- (feat|fix|perf|refactor|revert)(\([^\)]+\))?:" || echo "- No significant changes in this release.")
+          
+          EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          echo "notes<<$EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGES" >> $GITHUB_OUTPUT
+          echo "$EOF" >> $GITHUB_OUTPUT
+
       - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.check-version.outputs.version }}
           files: dist/*
-          generate_release_notes: true
+          generate_release_notes: false
           body: |
-            **Full Changelog**: https://github.com/${{ github.repository }}/compare/v${{ needs.check-version.outputs.version }}
+            ## 🚀 What's Changed
+
+            ${{ steps.changelog.outputs.notes }}
+
             ---
-            ## SHA-256 Checksums
+            **Full Changelog**: https://github.com/${{ github.repository }}/compare/${{ needs.check-version.outputs.version }}
+
+            ## 🔒 SHA-256 Checksums
 
             ${{ steps.hashes.outputs.hashes }}
 
