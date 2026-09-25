@@ -12,9 +12,9 @@ You can download a pre-built executable for your operating system from the [Rele
 
 Currently supported platforms are **Linux** (x86_64, ARM64, and ARMv7), **macOS** (Intel and Apple Silicon), and **Windows** (x86_64).
 
-### Using Cargo (Rust ecosystem)
+### Using Cargo
 
-If you have Rust installed, you can install the latest version directly from [crates.io](https://crates.io/crates/ime):
+If you work in the [Rust ecosystem](https://rust-lang.org/), you can install the latest version directly from [crates.io](https://crates.io/crates/ime) using [cargo](https://doc.rust-lang.org/stable/cargo/).
 
 ```bash
 cargo install ime
