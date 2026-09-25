@@ -307,11 +307,13 @@ jobs:
         id: hashes
         run: |
           echo "hashes<<EOF" >> $GITHUB_OUTPUT
+          echo "| File | SHA-256 |" >> $GITHUB_OUTPUT
+          echo "| --- | --- |" >> $GITHUB_OUTPUT
           for file in dist/*; do
             if [ -f "$file" ]; then
               sha256=$(sha256sum "$file" | awk '{print $1}')
               basename=$(basename "$file")
-              echo "$basename: $sha256" >> $GITHUB_OUTPUT
+              echo "| \`$basename\` | **$sha256** |" >> $GITHUB_OUTPUT
             fi
           done
           echo "EOF" >> $GITHUB_OUTPUT
@@ -323,13 +325,11 @@ jobs:
           files: dist/*
           generate_release_notes: true
           body: |
+            **Full Changelog**: https://github.com/${{ github.repository }}/compare/v${{ needs.check-version.outputs.version }}
+            ---
             ## SHA-256 Checksums
 
             ${{ steps.hashes.outputs.hashes }}
-
-            ---
-
-            **Full Changelog**: https://github.com/${{ github.repository }}/compare/v${{ needs.check-version.outputs.version }}
 
   publish-crate:
     name: Publish to crates.io
