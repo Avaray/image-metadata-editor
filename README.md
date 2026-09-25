@@ -1,6 +1,6 @@
 # 🧬 ime
 
-**ime** (Image Metadata Editor) is a fast, lightweight, and portable [CLI](https://en.wikipedia.org/wiki/Command-line_interface) written in [Rust](https://rust-lang.org/) for **reading**, **writing**, and completely **wiping** metadata from `.png`, `.jpg` and `.webp` image files. 
+**ime** (Image Metadata Editor) is a fast, lightweight, and portable [CLI](https://en.wikipedia.org/wiki/Command-line_interface) written in [Rust](https://rust-lang.org/) for **reading** and **modifying** [metadata](https://en.wikipedia.org/wiki/Metadata) in `.png`, `.jpg`, and `.webp` files, with [JSON](https://en.wikipedia.org/wiki/JSON) input and output.
 
 ![Screenshot of application in terminal UI mode](/docs/images/screenshot_01.jpg)
 
@@ -10,27 +10,27 @@
 
 You can download a pre-built executable for your operating system from the [Releases](https://github.com/Avaray/image-metadata-editor/releases/latest) page.
 
+Currently supported platforms are **Linux** (x86_64, ARM64, and ARMv7), **macOS** (Intel and Apple Silicon), and **Windows** (x86_64).
+
 ### Using Cargo (Rust ecosystem)
 
-If you have Rust installed, you can easily install the latest version directly from crates.io:
+If you have Rust installed, you can install the latest version directly from [crates.io](https://crates.io/crates/ime):
 
 ```bash
 cargo install ime
 ```
 
-### Using Bun / NPM / PNPM  (JavaScript ecosystem)
+### Using JavaScript package managers
 
-You can run `ime` instantly without installation using `bunx`, or install it globally via `npm` or `pnpm`:
+If you work in the [JavaScript ecosystem](https://stateofjs.com/en-US), you are probably familiar with package managers such as [NPM](https://docs.npmjs.com/downloading-and-installing-packages-globally), [PNPM](https://pnpm.io/global-packages), [Bun](https://bun.com/docs/pm/cli/install#global-packages), and others. You can use them to install `@avaray/ime` globally or run it without installing it. The installed executable is always called `ime`.
 
 ```bash
+# Install globally using NPM
+npm install -g @avaray/ime
+
 # Run instantly without installation using Bun
 bunx @avaray/ime photo.jpg
-
-# Install globally with NPM
-npm install -g @avaray/ime
 ```
-
-These are just two simple examples. Any well-known package manager should be able to install `@avaray/ime` globally, and most of them also offer running it without the need for installation.
 
 ## ⚡️ Usage
 
@@ -179,7 +179,7 @@ ime . --set Copyright="© 2025 John Doe"
 ime ./photos --set Copyright="© 2025 John Doe" -r
 ```
 
-## 🖼️ Supported formats
+### Supported formats
 
 | Category | Formats | Read | Write |
 |----------|---------|------|-------|
@@ -187,7 +187,7 @@ ime ./photos --set Copyright="© 2025 John Doe" -r
 | Image | HEIC/HEIF, AVIF, TIFF, CR3, RAF, IIQ | ✅ | ❌ |
 | Video | MP4, MOV, 3GP, MKV, WebM | ✅ | ❌ |
 
-## 🅾️ Exit codes
+### Exit codes
 
 | Code | Meaning |
 |------|---------|
@@ -195,10 +195,15 @@ ime ./photos --set Copyright="© 2025 John Doe" -r
 | `1` | Runtime error (I/O error, unsupported format, key not found, corrupt file) |
 | `2` | Usage error (bad flags, missing file argument) |
 
-## 🧾 Changelog
+### Notes
+
+- `ime` was originally created as a dependency for my custom [ComfyUI](https://github.com/comfy-org/comfyui) node collection, which is not publicly available yet.
+- I do not plan to expand metadata-writing support to additional file formats, especially video formats.
+
+### Changelog
 
 All notable changes to this project will be documented in the [CHANGELOG.md](CHANGELOG.md) file.
 
-## 📄 License
+### License
 
 This project is licensed under the [CC-BY-NC-4.0](LICENSE) License.
