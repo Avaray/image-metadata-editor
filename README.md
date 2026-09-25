@@ -1,6 +1,8 @@
-# 🧬 Image Metadata Editor
+# 🧬 ime
 
-**ime** is a fast, lightweight, and portable [CLI](https://en.wikipedia.org/wiki/Command-line_interface) written in [Rust](https://rust-lang.org/) for **reading**, **writing**, and completely **wiping** metadata from image files. I'm building this tool as a dependency for my [ComfyUI](https://comfy.org/) custom nodes. The TUI (Terminal UI) was built using [Ratatui](https://ratatui.rs/) as an extra feature. Overall, the tool operates on [JSON](https://en.wikipedia.org/wiki/JSON).
+**ime** (Image Metadata Editor) is a fast, lightweight, and portable [CLI](https://en.wikipedia.org/wiki/Command-line_interface) written in [Rust](https://rust-lang.org/) for **reading**, **writing**, and completely **wiping** metadata from `.png`, `.jpg` and `.webp` image files. 
+
+![Screenshot of application in terminal UI mode](/docs/images/screenshot_01.jpg)
 
 ## 📦 Installation
 
