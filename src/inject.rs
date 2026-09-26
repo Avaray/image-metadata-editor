@@ -10,7 +10,12 @@ const CRC32: Crc<u32> = Crc::<u32>::new(&CRC_32_ISO_HDLC);
 pub fn inject_metadata(path: &str, out_path: Option<&str>, tags: &BTreeMap<String, String>) -> Result<(), String> {
     let out_path_str = match out_path {
         Some(p) => p.to_string(),
-        None => format!("{}.tmp", path),
+        None => {
+            // Preserve the original extension so little_exif can determine the file type
+            // from the extension of the temp file (e.g. ".jpg", ".png").
+            let ext = std::path::Path::new(path).extension().and_then(|e| e.to_str()).map(|e| format!(".{}", e)).unwrap_or_default();
+            format!("{}.imetmp{}", path, ext)
+        }
     };
 
     // Copy original to out_path_str so we can modify it
@@ -61,15 +66,15 @@ pub fn inject_metadata(path: &str, out_path: Option<&str>, tags: &BTreeMap<Strin
         if is_webp {
             // For WebP, little_exif gives us the full RIFF chunk bytes which we can inject
             let mut exif = Metadata::new();
-            for tag in known_exif_tags {
+            for tag in known_exif_tags.clone() {
                 exif.set_tag(tag);
             }
             let chunk_bytes = exif.as_u8_vec(little_exif::filetype::FileExtension::WEBP).map_err(|e| format!("Failed to build WebP EXIF: {:?}", e))?;
 
             let mut inp = File::open(path).map_err(|e| e.to_string())?;
-            // We read 8 bytes of sig, need to reset to offset 8 for WebP RIFF parser
-            // Actually our webp parser expects 4 bytes already read ("RIFF"), so offset 4
-            inp.seek(std::io::SeekFrom::Start(4)).map_err(|e| e.to_string())?;
+            // Seek past "RIFF" (4 bytes) + RIFF size (4 bytes) = offset 8.
+            // webp::inject_metadata reads 4 bytes and expects them to be "WEBP".
+            inp.seek(std::io::SeekFrom::Start(8)).map_err(|e| e.to_string())?;
 
             let mut out = BufWriter::new(File::create(&out_path_str).map_err(|e| e.to_string())?);
 
@@ -78,12 +83,12 @@ pub fn inject_metadata(path: &str, out_path: Option<&str>, tags: &BTreeMap<Strin
             // Drop handles explicitly
             drop(out);
             drop(inp);
-        } else {
-            // For JPEG/PNG we use little_exif's built-in file writing
+        } else if is_jpeg {
+            // For JPEG we use little_exif's built-in file writing
             let out_p = std::path::Path::new(&out_path_str);
             let mut exif = Metadata::new_from_path(out_p).unwrap_or_else(|_| Metadata::new());
 
-            for tag in known_exif_tags {
+            for tag in known_exif_tags.clone() {
                 exif.set_tag(tag);
             }
 
@@ -94,10 +99,32 @@ pub fn inject_metadata(path: &str, out_path: Option<&str>, tags: &BTreeMap<Strin
         }
     }
 
-    // If PNG and we have unknown tags, inject tEXt chunks
-    if is_png && !unknown.is_empty() {
+    // If PNG, we manually inject both tEXt and eXIf chunks
+    if is_png && (!unknown.is_empty() || !known_exif_tags.is_empty()) {
+        // Build eXIf chunk payload if we have EXIF tags
+        let exif_payload = if !known_exif_tags.is_empty() {
+            let mut exif = Metadata::new();
+            for tag in known_exif_tags {
+                exif.set_tag(tag);
+            }
+            // PNG EXIF payload must be raw TIFF data for the modern `eXIf` chunk.
+            // We use FileExtension::JPEG to generate a valid APP1 chunk and strip its APP1 header (10 bytes).
+            // APP1 format: 0xFF 0xE1 [2-byte size] "Exif\0\0" [TIFF DATA]
+            if let Ok(bytes) = exif.as_u8_vec(little_exif::filetype::FileExtension::JPEG) {
+                if bytes.len() > 10 && bytes[0] == 0xFF && bytes[1] == 0xE1 && &bytes[4..10] == b"Exif\0\0" {
+                    Some(bytes[10..].to_vec())
+                } else {
+                    None // Unexpected format
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         let temp_png = format!("{}.png.tmp", out_path_str);
-        match inject_png_text(&out_path_str, &temp_png, &unknown) {
+        match inject_png_chunks(&out_path_str, &temp_png, &unknown, exif_payload.as_deref()) {
             Ok(_) => {
                 std::fs::rename(&temp_png, &out_path_str).map_err(|e| format!("Failed to swap png temp file: {}", e))?;
             }
@@ -132,7 +159,7 @@ fn parse_known_exif_tag(key: &str, value: &str) -> Option<ExifTag> {
     }
 }
 
-fn inject_png_text(in_path: &str, out_path: &str, tags: &BTreeMap<String, String>) -> Result<(), String> {
+fn inject_png_chunks(in_path: &str, out_path: &str, tags: &BTreeMap<String, String>, exif_payload: Option<&[u8]>) -> Result<(), String> {
     let mut inp = File::open(in_path).map_err(|e| e.to_string())?;
     let mut out = BufWriter::new(File::create(out_path).map_err(|e| e.to_string())?);
 
@@ -142,7 +169,7 @@ fn inject_png_text(in_path: &str, out_path: &str, tags: &BTreeMap<String, String
     out.write_all(&sig).map_err(|e| e.to_string())?;
 
     // Keys that have already been written (either as new after IHDR or as replacement)
-    let mut written: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut written_text: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut new_injected = false;
 
     loop {
@@ -155,14 +182,17 @@ fn inject_png_text(in_path: &str, out_path: &str, tags: &BTreeMap<String, String
         let mut type_buf = [0u8; 4];
         inp.read_exact(&mut type_buf).map_err(|e| e.to_string())?;
 
-        // After IHDR: inject any new tags that don't exist in the file yet
+        // After IHDR: inject any new tags that don't exist in the file yet, including EXIF
         if !new_injected && &type_buf != b"IHDR" {
             for (k, v) in tags {
-                if !written.contains(k) {
+                if !written_text.contains(k) {
                     let k_trunc = if k.len() > 79 { &k[..79] } else { k };
                     write_text_chunk(&mut out, k_trunc, v).map_err(|e| e.to_string())?;
-                    written.insert(k.clone());
+                    written_text.insert(k.clone());
                 }
+            }
+            if let Some(payload) = exif_payload {
+                write_generic_chunk(&mut out, b"eXIf", payload).map_err(|e| e.to_string())?;
             }
             new_injected = true;
         }
@@ -173,6 +203,11 @@ fn inject_png_text(in_path: &str, out_path: &str, tags: &BTreeMap<String, String
         let mut crc_buf = [0u8; 4];
         inp.read_exact(&mut crc_buf).map_err(|e| e.to_string())?;
 
+        // Skip any old eXIf chunks (we already injected the new one)
+        if &type_buf == b"eXIf" && exif_payload.is_some() {
+            continue;
+        }
+
         if &type_buf == b"tEXt"
             && let Some(nul_pos) = chunk_data.iter().position(|&b| b == 0)
             && let Ok(chunk_key) = std::str::from_utf8(&chunk_data[..nul_pos])
@@ -181,7 +216,7 @@ fn inject_png_text(in_path: &str, out_path: &str, tags: &BTreeMap<String, String
             // Replace this chunk with the new value
             let k_trunc = if chunk_key.len() > 79 { &chunk_key[..79] } else { chunk_key };
             write_text_chunk(&mut out, k_trunc, new_value).map_err(|e| e.to_string())?;
-            written.insert(chunk_key.to_string());
+            written_text.insert(chunk_key.to_string());
             if &type_buf == b"IEND" {
                 break;
             }
@@ -198,6 +233,21 @@ fn inject_png_text(in_path: &str, out_path: &str, tags: &BTreeMap<String, String
             break;
         }
     }
+
+    Ok(())
+}
+
+fn write_generic_chunk(out: &mut impl Write, chunk_type: &[u8; 4], data: &[u8]) -> std::io::Result<()> {
+    let length = data.len() as u32;
+    out.write_all(&length.to_be_bytes())?;
+
+    let mut crc_input = Vec::with_capacity(4 + data.len());
+    crc_input.extend_from_slice(chunk_type);
+    crc_input.extend_from_slice(data);
+
+    out.write_all(chunk_type)?;
+    out.write_all(data)?;
+    out.write_all(&CRC32.checksum(&crc_input).to_be_bytes())?;
 
     Ok(())
 }

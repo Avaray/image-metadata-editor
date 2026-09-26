@@ -14,7 +14,26 @@ pub fn extract(path: &str, parser: &mut MediaParser) -> Result<Output, Box<dyn s
                     for entry in exif {
                         if let Some(val) = entry.value() {
                             let dir_name = format!("{:?}", entry.ifd_kind());
-                            let tag_name = entry.tag().to_string();
+                            let mut tag_name = entry.tag().to_string();
+                            if tag_name.starts_with("Unknown(0x") {
+                                if tag_name == "Unknown(0x010e)" {
+                                    tag_name = "ImageDescription".to_string();
+                                } else if tag_name == "Unknown(0x010f)" {
+                                    tag_name = "Make".to_string();
+                                } else if tag_name == "Unknown(0x0110)" {
+                                    tag_name = "Model".to_string();
+                                } else if tag_name == "Unknown(0x0131)" {
+                                    tag_name = "Software".to_string();
+                                } else if tag_name == "Unknown(0x013b)" {
+                                    tag_name = "Artist".to_string();
+                                } else if tag_name == "Unknown(0x8298)" {
+                                    tag_name = "Copyright".to_string();
+                                } else if tag_name == "Unknown(0x9003)" {
+                                    tag_name = "DateTimeOriginal".to_string();
+                                } else if tag_name == "Unknown(0x9286)" {
+                                    tag_name = "UserComment".to_string();
+                                }
+                            }
 
                             let val_str = val.to_string();
                             let decoded = if val_str.starts_with("0x") { decode_exif_hex_string(&val_str) } else { val_str };
