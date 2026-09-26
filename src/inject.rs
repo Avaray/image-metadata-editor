@@ -40,6 +40,22 @@ pub fn inject_metadata(path: &str, out_path: Option<&str>, tags: &BTreeMap<Strin
         return Err("Injecting metadata is currently unsupported for this format (only JPEG, PNG, and WebP are supported).".into());
     }
 
+    if let Some(out) = out_path {
+        if let Some(ext) = std::path::Path::new(out).extension().and_then(|e| e.to_str()) {
+            let ext_lower = ext.to_lowercase();
+            let is_valid = match ext_lower.as_str() {
+                "jpg" | "jpeg" => is_jpeg,
+                "png" => is_png,
+                "webp" => is_webp,
+                _ => true, // Allow unknown extensions
+            };
+            if !is_valid {
+                std::fs::remove_file(&out_path_str).ok();
+                return Err(format!("Output file extension '.{}' does not match the input file's format. Note: This tool does not convert image formats.", ext));
+            }
+        }
+    }
+
     // Split tags into known EXIF and unknown
     let mut unknown = BTreeMap::new();
     let mut known_exif_tags: Vec<ExifTag> = Vec::new();

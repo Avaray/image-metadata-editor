@@ -17,6 +17,25 @@ pub fn strip_metadata(path: &str, out_path: Option<&str>) -> Result<(), String> 
         return Err("File too small".into());
     }
 
+    let is_jpeg = sig[0..2] == [0xFF, 0xD8];
+    let is_png = sig == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+    let is_webp = sig[0..4] == *b"RIFF";
+
+    if let Some(out) = out_path {
+        if let Some(ext) = std::path::Path::new(out).extension().and_then(|e| e.to_str()) {
+            let ext_lower = ext.to_lowercase();
+            let is_valid = match ext_lower.as_str() {
+                "jpg" | "jpeg" => is_jpeg,
+                "png" => is_png,
+                "webp" => is_webp,
+                _ => true, // Allow unknown extensions
+            };
+            if !is_valid {
+                return Err(format!("Output file extension '.{}' does not match the input file's format. Note: This tool does not convert image formats.", ext));
+            }
+        }
+    }
+
     let mut out = BufWriter::new(File::create(&out_path_str).map_err(|e| e.to_string())?);
 
     let res = if sig[0..2] == [0xFF, 0xD8] {
