@@ -3,6 +3,7 @@
 - Always run `cargo fmt` to format the codebase before creating a git commit.
 - Do not execute a `git push` command and do not ask me to push changes after commiting.
 - Maintain a `CHANGELOG.md` file at the project root, formatted according to Keep a Changelog (https://keepachangelog.com/en/1.1.0/). Update this file ONLY when I explicitly ask you to create a new "release"; at that time, review all relevant changes since the previous release and add only notable changes not already documented in the changelog. Do not modify it during regular code updates.
+- Critical application behavior must be covered by integration tests located in the `tests/` directory.
 - Store all temporary scripts (created for debugging, troubleshooting, or quick prototyping) inside a dedicated scratch/ directory to keep the project root and source code clean.
 - Use command `git ls-files` to get a clean, flat list of all tracked files. 
 - Use command `lsd --tree -I target -I .git -I fixtures --icon never --color never` (LSDeluxe) to visualize the project structure as a tree while filtering out build artifacts.
