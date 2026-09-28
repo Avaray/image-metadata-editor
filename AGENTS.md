@@ -1,0 +1,11 @@
+- Use English exclusively for all outputs, including chat responses, code comments, and documentation, regardless of the input language.
+- Use strict Conventional Commits (<type>[scope]: <description>) with standard types (feat, fix, chore, etc.). The title must be <72 chars, in imperative mood, start lowercase, and have no trailing period. Always include a body with a bulleted list of all changes (Do not insert blank lines between bullet points). 
+- Always run `cargo fmt` to format the codebase before creating a git commit.
+- Do not execute a `git push` command and do not ask me to push changes after commiting.
+- Maintain a `CHANGELOG.md` file at the project root, formatted according to Keep a Changelog (https://keepachangelog.com/en/1.1.0/). Update this file ONLY when I explicitly ask you to create a new "release"; at that time, review all relevant changes since the previous release and add only notable changes not already documented in the changelog. Do not modify it during regular code updates.
+- Store all temporary scripts (created for debugging, troubleshooting, or quick prototyping) inside a dedicated scratch/ directory to keep the project root and source code clean.
+- Use command `git ls-files` to get a clean, flat list of all tracked files. 
+- Use command `lsd --tree -I target -I .git -I fixtures --icon never --color never` (LSDeluxe) to visualize the project structure as a tree while filtering out build artifacts.
+- Use command `rg --color=never` (ripgrep) to search for text or code patterns instead of `grep` or `grep_search`. 
+- Use command `fd` instead of `find` for locating files by name or pattern. 
+- Use command `jq` for JSON parsing. Use `-r` flag only for extracting a single scalar into shell; omit it when the output must stay valid JSON (piping, files, nested structures). 
