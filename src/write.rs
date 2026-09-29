@@ -32,23 +32,22 @@ pub struct WriteOutcome {
     pub changed: bool,
 }
 
-/// Compute the `--set` result: parse every payload as JSON5, deep-merge them
-/// in order onto the file's current metadata, and encode the difference.
-pub fn apply_set(source: &[u8], format: ImageFormat, payloads: &[String]) -> Result<WriteOutcome, Error> {
+/// Compute the `--set` result: deep-merge the pre-parsed payloads in order
+/// onto the file's current metadata, and encode the difference.
+pub fn apply_set(source: &[u8], format: ImageFormat, payloads: &[merge::SetPayload]) -> Result<WriteOutcome, Error> {
     let current = meta::read_metadata(source, format)?;
     let mut merged_exif = current.exif.clone();
     let mut merged_custom = current.custom.clone();
-    for text in payloads {
-        let payload = merge::parse_set_payload(text)?;
-        match payload.exif {
+    for payload in payloads {
+        match &payload.exif {
             None => {}
             Some(merge::SetSection::Clear) => merged_exif.clear(),
-            Some(merge::SetSection::Merge(map)) => merge::deep_merge(&mut merged_exif, &map),
+            Some(merge::SetSection::Merge(map)) => merge::deep_merge(&mut merged_exif, map),
         }
-        match payload.custom {
+        match &payload.custom {
             None => {}
             Some(merge::SetSection::Clear) => merged_custom = Some(Map::new()),
-            Some(merge::SetSection::Merge(map)) => merge::deep_merge(merged_custom.get_or_insert_with(Map::new), &map),
+            Some(merge::SetSection::Merge(map)) => merge::deep_merge(merged_custom.get_or_insert_with(Map::new), map),
         }
     }
 
