@@ -518,6 +518,18 @@ impl App {
                     self.navigate_to(parent);
                 }
             }
+            (KeyCode::Left, KeyModifiers::CONTROL) => {
+                if self.pending_dir.is_some() {
+                    return;
+                }
+                let mut current = self.dir.clone();
+                while let Some(parent) = parent_dir(&current) {
+                    current = parent;
+                }
+                if current != self.dir {
+                    self.navigate_to(current);
+                }
+            }
             (KeyCode::Char('c'), KeyModifiers::NONE) => {
                 if let Some(name) = self.entries.get(self.file_cursor).map(|entry| entry.name.clone()) {
                     self.copy_to_clipboard(&name, &format!("Copied '{name}'"));
@@ -571,6 +583,11 @@ impl App {
                     self.focus = Focus::Files;
                 } else if let Some(tree) = self.tree.as_mut() {
                     tree.drill_up();
+                }
+            }
+            (KeyCode::Left, KeyModifiers::CONTROL) => {
+                if let Some(tree) = self.tree.as_mut() {
+                    while tree.drill_up() {}
                 }
             }
             (KeyCode::Enter, KeyModifiers::NONE) => {
