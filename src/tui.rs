@@ -160,6 +160,7 @@ pub(crate) struct App {
     pub restore_drill: Option<(PathBuf, Vec<Segment>, usize)>,
     pub overlay: Option<Overlay>,
     pub status: Option<String>,
+    pub status_time: Option<Instant>,
     pub power: bool,
     pub watch_requested: bool,
     pub watcher: Option<WatchState>,
@@ -197,6 +198,7 @@ impl App {
             restore_drill: None,
             overlay: None,
             status: None,
+            status_time: None,
             power,
             watch_requested: watch,
             watcher: None,
@@ -342,12 +344,12 @@ impl App {
                 Ok(()) => self.watcher = Some(WatchState { dir: self.dir.clone(), _watcher: watcher, rx }),
                 Err(err) => {
                     self.watcher = None;
-                    self.status = Some(format!("watch unavailable: {err}"));
+                    self.set_status(format!("watch unavailable: {err}"));
                 }
             },
             Err(err) => {
                 self.watcher = None;
-                self.status = Some(format!("watch unavailable: {err}"));
+                self.set_status(format!("watch unavailable: {err}"));
             }
         }
     }
@@ -372,6 +374,13 @@ impl App {
     /// Periodic work: debounce the metadata preview and coalesce bursts of
     /// watch events into a single refresh.
     fn tick(&mut self) {
+        if let Some(time) = self.status_time
+            && time.elapsed() >= Duration::from_secs(3)
+        {
+            self.status = None;
+            self.status_time = None;
+        }
+
         if let Some((path, since)) = self.preview_pending.clone()
             && since.elapsed() >= Duration::from_millis(50)
         {
@@ -428,11 +437,17 @@ impl App {
 
     // -- keys ---------------------------------------------------------------
 
+    fn set_status(&mut self, text: impl Into<String>) {
+        self.status = Some(text.into());
+        self.status_time = Some(Instant::now());
+    }
+
     fn on_key(&mut self, key: KeyEvent) {
         if matches!(key.kind, KeyEventKind::Release) {
             return;
         }
         self.status = None;
+        self.status_time = None;
         if self.overlay.is_some() {
             self.overlay_key(key);
             return;
@@ -505,12 +520,12 @@ impl App {
             }
             (KeyCode::Char('c'), KeyModifiers::NONE) => {
                 if let Some(name) = self.entries.get(self.file_cursor).map(|entry| entry.name.clone()) {
-                    self.copy_to_clipboard(&name);
+                    self.copy_to_clipboard(&name, &format!("Copied '{name}'"));
                 }
             }
             (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
                 if let Some(path) = self.entries.get(self.file_cursor).map(|entry| entry.path.display().to_string()) {
-                    self.copy_to_clipboard(&path);
+                    self.copy_to_clipboard(&path, &format!("Copied '{path}'"));
                 }
             }
             (KeyCode::Char('r'), KeyModifiers::NONE) if self.pending_dir.is_none() => {
@@ -586,14 +601,15 @@ impl App {
             }
             (KeyCode::Char('c'), KeyModifiers::NONE) => {
                 if let Some(text) = self.selected_copy_text() {
-                    self.copy_to_clipboard(&text);
+                    self.copy_to_clipboard(&text, "Copied value");
                 }
             }
             (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
                 if let Some(tree) = self.tree.as_ref()
                     && let Some((path, _)) = tree.selected()
                 {
-                    self.copy_to_clipboard(&crate::tui_tree::dot_path(&path));
+                    let dot_path = crate::tui_tree::dot_path(&path);
+                    self.copy_to_clipboard(&dot_path, &format!("Copied '{dot_path}'"));
                 }
             }
             _ => {}
@@ -628,7 +644,7 @@ impl App {
 
     fn wipe_key(&mut self) {
         let Some(path) = self.preview_path.clone() else {
-            self.status = Some("no file selected".to_string());
+            self.set_status("no file selected".to_string());
             return;
         };
         let name = path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_else(|| path.display().to_string());
@@ -638,17 +654,17 @@ impl App {
     fn delete_node(&mut self, path: &[Segment]) {
         match self.commit_edit(path, &Edit::Delete) {
             Ok(()) => {}
-            Err(message) => self.status = Some(message),
+            Err(message) => self.set_status(message),
         }
     }
 
     fn wipe_file_at(&mut self, path: &Path) {
         match wipe_file(path) {
             Ok(()) => {
-                self.status = Some(format!("wiped '{}'", path.file_name().map(|name| name.to_string_lossy()).unwrap_or_default()));
+                self.set_status(format!("wiped '{}'", path.file_name().map(|name| name.to_string_lossy()).unwrap_or_default()));
                 self.reload_preview();
             }
-            Err(message) => self.status = Some(message),
+            Err(message) => self.set_status(message),
         }
     }
 
@@ -676,10 +692,10 @@ impl App {
         tree.value_at(&path).map(crate::tui_tree::copy_text)
     }
 
-    fn copy_to_clipboard(&mut self, text: &str) {
+    fn copy_to_clipboard(&mut self, text: &str, label: &str) {
         match arboard::Clipboard::new().and_then(|mut clipboard| clipboard.set_text(text.to_string())) {
-            Ok(()) => self.status = Some("copied".to_string()),
-            Err(err) => self.status = Some(format!("copy failed: {err}")),
+            Ok(()) => self.set_status(label.to_string()),
+            Err(err) => self.set_status(format!("copy failed: {err}")),
         }
     }
 
@@ -866,7 +882,7 @@ impl App {
                     self.file_cursor = index;
                     self.selection_changed();
                 } else {
-                    self.status = Some("no matches found".to_string());
+                    self.set_status("no matches found".to_string());
                 }
             }
             Focus::Meta => {
@@ -877,7 +893,7 @@ impl App {
                             tree.jump_to(&first);
                         }
                     } else {
-                        self.status = Some("no matches found".to_string());
+                        self.set_status("no matches found".to_string());
                     }
                 }
             }
