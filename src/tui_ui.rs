@@ -129,7 +129,7 @@ fn render_files(app: &mut App, frame: &mut Frame, area: Rect) {
             let text = if entry.is_parent {
                 "..".to_string()
             } else if entry.is_dir {
-                format!("▸ {}/", entry.name)
+                format!("▸ {}", entry.name)
             } else {
                 format!("• {}", entry.name)
             };
