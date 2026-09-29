@@ -66,6 +66,6 @@ pub fn collect(root: &Path, recursive: bool) -> Vec<Entry> {
             entries.push(Entry::Work { path: path.to_path_buf() });
         }
     }
-    entries.sort_by(|a, b| a.display().cmp(&b.display()));
+    entries.sort_by_key(|entry| entry.display());
     entries
 }

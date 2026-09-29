@@ -141,11 +141,11 @@ fn render_meta(app: &mut App, frame: &mut Frame, area: Rect) {
         frame.render_widget(Paragraph::new("Open an image to load metadata.").style(Style::default().fg(Color::DarkGray)), inner);
         return;
     }
-    if let Some((_, since)) = &app.preview_loading {
-        if let Some(frame_char) = spinner(*since) {
-            frame.render_widget(Paragraph::new(format!("{frame_char} Loading...")), inner);
-            return;
-        }
+    if let Some((_, since)) = &app.preview_loading
+        && let Some(frame_char) = spinner(*since)
+    {
+        frame.render_widget(Paragraph::new(format!("{frame_char} Loading...")), inner);
+        return;
     }
     if let Some(error) = &app.preview_error {
         frame.render_widget(Paragraph::new(error.clone()).style(Style::default().fg(Color::Red)), inner);

@@ -458,11 +458,9 @@ impl App {
                     self.copy_to_clipboard(&path);
                 }
             }
-            (KeyCode::Char('r'), KeyModifiers::NONE) => {
-                if self.pending_dir.is_none() {
-                    let dir = self.dir.clone();
-                    self.request_scan(dir, false);
-                }
+            (KeyCode::Char('r'), KeyModifiers::NONE) if self.pending_dir.is_none() => {
+                let dir = self.dir.clone();
+                self.request_scan(dir, false);
             }
             _ => {}
         }
@@ -824,7 +822,7 @@ impl App {
     fn commit_edit(&mut self, path: &[Segment], edit: &Edit) -> Result<(), String> {
         let file = self.preview_path.clone().ok_or_else(|| "no file loaded".to_string())?;
         let tree = self.tree.as_ref().ok_or_else(|| "no file loaded".to_string())?;
-        let payload = tree.build_edit_payload(&path, edit);
+        let payload = tree.build_edit_payload(path, edit);
         let text = serde_json::to_string(&payload).map_err(|err| format!("cannot encode edit: {err}"))?;
         let parsed = crate::merge::parse_set_payload(&text).map_err(|err| err.to_string())?;
         let bytes = std::fs::read(&file).map_err(|err| format!("cannot read file: {err}"))?;
@@ -982,7 +980,7 @@ fn scan_entries(dir: &Path) -> (Vec<FileEntry>, Option<String>) {
             entries.push(FileEntry { name, path, is_dir: false, is_parent: false });
         }
     }
-    entries.sort_by(|a, b| (!a.is_dir, a.name.to_lowercase()).cmp(&(!b.is_dir, b.name.to_lowercase())));
+    entries.sort_by_key(|entry| (!entry.is_dir, entry.name.to_lowercase()));
     if let Some(parent) = parent_dir(dir) {
         entries.insert(0, FileEntry { name: "..".to_string(), path: parent, is_dir: true, is_parent: true });
     }
