@@ -34,7 +34,8 @@
 
 ## Custom keys and smart JSON traversal
 
-- Custom keys are stored differently per format; see `06-data-schemas.md` for the exact on-disk encoding, including the requirement that the `custom` section's keys are always serialized in sorted (alphabetical) order — this makes the same logical `--set` result produce a byte-identical output file every time, regardless of internal iteration order.
+- Custom keys are stored differently per format, as a direct view of that format's own native text storage (PNG's `tEXt`/`zTXt`/`iTXt` chunks; JPEG/WebP's `UserComment` tag) rather than a private `ime`-only format — see `06-data-schemas.md`. This is deliberate: it's what makes metadata another tool already embedded (e.g. a generation tool's `workflow`/`prompt` payload in a PNG chunk) show up correctly without `ime` ever having written it. Text that isn't valid JSON (written by some other, non-`ime` tool) is kept as a plain string rather than discarded or treated as an error.
+- Whenever `custom` data is (re)serialized, keys are written in sorted (alphabetical) order at every level — this makes the same logical `--set` result produce a byte-identical output file every time, regardless of internal iteration order.
 - When metadata is read and printed, any string value (in `exif` or `custom`) that is itself valid JSON is parsed and embedded as nested JSON rather than left as an escaped string, and this is applied recursively. This makes embedded documents — such as ComfyUI's `workflow`/`prompt` payloads — directly inspectable. This traversal is output-only; it never changes what's stored on disk.
 - Full metadata is always printed as pretty-printed JSON (there is no separate raw-scalar output mode).
 

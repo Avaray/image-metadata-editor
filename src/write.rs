@@ -21,9 +21,6 @@ const USER_COMMENT_CODE: u16 = 0x9286;
 /// Character-code prefix of a `UserComment` payload holding JSON.
 const USER_COMMENT_ASCII_PREFIX: &[u8] = b"ASCII\0\0\0";
 
-/// Keyword of the PNG `tEXt` chunk carrying the `custom` section.
-const PNG_CUSTOM_KEYWORD: &str = "ime:custom";
-
 /// The result of a `--set`/`--wipe` computation, before it is written
 /// anywhere. `changed == false` means the result is byte-identical to the
 /// source, so an in-place write can be skipped.
@@ -118,26 +115,71 @@ fn build_tag(name: &str, value: &Value) -> Result<ExifTag, Error> {
     exif_tags::build(name, value)
 }
 
-/// Replace the PNG `tEXt` custom carrier (or remove it when the merged
-/// section is empty or absent).
+/// Rewrite the PNG text-chunk set from the merged `custom` section (which
+/// may only hold `PngText`), or drop every text chunk when it is empty.
 fn apply_png_custom(result: &[u8], merged: Option<&Map<String, Value>>) -> Result<Vec<u8>, Error> {
-    let empty = merged.is_none_or(Map::is_empty);
-    if empty {
-        return png::remove_text(result, PNG_CUSTOM_KEYWORD);
+    let mut desired: Vec<(String, String)> = Vec::new();
+    if let Some(custom) = merged {
+        for key in custom.keys() {
+            if key != "PngText" {
+                return Err(Error::runtime(format!("unknown custom key '{key}' for PNG files (only 'PngText' is supported)")));
+            }
+        }
+        if let Some(png_text) = custom.get("PngText") {
+            let Value::Object(map) = png_text else {
+                return Err(Error::runtime("custom 'PngText' must be an object of keyword/value pairs"));
+            };
+            for (keyword, value) in map {
+                desired.push((keyword.clone(), custom_text(value)?));
+            }
+        }
     }
-    let json = merge::serialize_custom(merged.unwrap_or(&Map::new()))?;
-    png::upsert_text(result, PNG_CUSTOM_KEYWORD, hex::encode(json).as_bytes())
+    png::set_text_chunks(result, &desired)
+}
+
+/// The on-disk text of one custom value: strings as-is, anything else as
+/// canonical compact JSON.
+fn custom_text(value: &Value) -> Result<String, Error> {
+    match value {
+        Value::String(text) => Ok(text.clone()),
+        _ => merge::serialize_canonical(value),
+    }
 }
 
 /// Translate a custom-section change into a `UserComment` set/delete so it can
-/// ride the same `little_exif` pipeline as standard tags.
+/// ride the same `little_exif` pipeline as standard tags. Only `UserComment`
+/// may appear under `custom` here; structured values serialize to canonical
+/// JSON (ASCII-escaped), plain strings are written as-is.
 fn apply_jpeg_custom(sets: &mut Vec<ExifTag>, deletes: &mut Vec<(u16, ExifTagGroup)>, merged: Option<&Map<String, Value>>) -> Result<(), Error> {
-    if merged.is_none_or(Map::is_empty) {
+    let value = match merged {
+        None => None,
+        Some(custom) => {
+            for key in custom.keys() {
+                if key != "UserComment" {
+                    return Err(Error::runtime(format!("unknown custom key '{key}' for JPEG/WebP files (only 'UserComment' is supported)")));
+                }
+            }
+            custom.get("UserComment")
+        }
+    };
+    let Some(value) = value else {
         deletes.push((USER_COMMENT_CODE, ExifTagGroup::EXIF));
         return Ok(());
-    }
+    };
+    let text = match value {
+        Value::String(text) => {
+            if !text.is_ascii() {
+                return Err(Error::runtime("custom 'UserComment' string must be ASCII (use \\uXXXX escapes for other characters)"));
+            }
+            if text.as_bytes().contains(&0) {
+                return Err(Error::runtime("custom 'UserComment' string must not contain NUL bytes"));
+            }
+            text.clone()
+        }
+        _ => merge::ascii_escape(&merge::serialize_canonical(value)?),
+    };
     let mut payload = Vec::from(USER_COMMENT_ASCII_PREFIX);
-    payload.extend_from_slice(&merge::serialize_custom(merged.unwrap_or(&Map::new()))?);
+    payload.extend_from_slice(text.as_bytes());
     sets.push(ExifTag::UserComment(payload));
     Ok(())
 }

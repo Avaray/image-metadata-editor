@@ -64,8 +64,10 @@ ime photo.jpg
 ```json
 {
   "custom": {
-    "project": "stage1",
-    "rating": 5
+    "UserComment": {
+      "project": "stage1",
+      "rating": 5
+    }
   },
   "exif": {
     "Make": "TestMake",
@@ -76,6 +78,8 @@ ime photo.jpg
 }
 ```
 
+The `custom` shape is format-dependent: JPEG/WebP expose the single `UserComment` slot, while PNG exposes every native text chunk under `PngText.<keyword>` (e.g. `custom.PngText.workflow` for a ComfyUI file).
+
 Values keep their native EXIF shape: rationals stay as `"numerator/denominator"` strings, dates stay as `"YYYY:MM:DD HH:MM:SS"`, and GPS coordinates stay as degree/minute/second triplets. A string value that itself holds a JSON object or array (such as an embedded ComfyUI `workflow` document) is parsed and shown as nested JSON.
 
 ### Setting metadata
@@ -84,13 +88,16 @@ Values keep their native EXIF shape: rationals stay as `"numerator/denominator"`
 
 ```bash
 # Tag a photo (JSON5 syntax: unquoted keys, single quotes, trailing commas)
-ime photo.jpg --set "{exif: {Artist: 'Jan Kowalski'}, custom: {rating: 5}}"
+ime photo.jpg --set "{exif: {Artist: 'Jan Kowalski'}, custom: {UserComment: {rating: 5}}}"
 
 # Delete keys by setting them to null (or "", {}, [])
 ime photo.jpg --set '{"exif": {"GPSLatitude": null, "GPSLongitude": null}}'
 
+# On PNG, custom keys live under PngText (one native text chunk per keyword)
+ime image.png --set '{"custom": {"PngText": {"comment": "vacation photo"}}}'
+
 # Read the payload from stdin or from a file instead of inline
-echo '{"custom": {"batch": 7}}' | ime photo.jpg --set -
+echo '{"custom": {"UserComment": {"batch": 7}}}' | ime photo.jpg --set -
 ime photo.jpg --set @tags.json
 ```
 
@@ -127,7 +134,7 @@ curl -s https://example.com/photo.jpg | ime - --set @tags.json > tagged.jpg
 Pass a directory to process every supported image it contains. Reads print an aggregated `{ "<path>": <metadata> }` object; writes happen in-place with per-file progress on stderr. Use `--recursive` to descend into subdirectories (symbolic links are followed).
 
 ```bash
-ime ./photos --set '{"custom": {"event": "summer-2026"}}' --recursive
+ime ./photos --set '{"exif": {"Copyright": "2026 Jane Doe"}}' --recursive
 ```
 
 A single bad file never stops the batch: it is reported on stderr, the rest continue, and the exit code is `1` if anything failed.

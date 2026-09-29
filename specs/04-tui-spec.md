@@ -1,8 +1,8 @@
 # TUI Specification
 
 - The TUI is built using `ratatui` (v0.30) and `crossterm` (v0.29), with system clipboard integration via `arboard` and text-input via `tui-input`. See `05-architecture.md` for why.
-- The top bar displays the current absolute path or directory.
-- The bottom bar acts as a keybind legend explaining active shortcuts, and should update to reflect whichever panel/mode currently has focus (the legend for the file tree differs from the legend for the metadata tree or an open dialog).
+- The top bar displays the current absolute path or directory, inside a border — the same border style as the file tree and metadata panels below it, so all four regions (top bar, file tree, metadata tree, bottom legend) read as one consistent bordered layout.
+- The bottom bar acts as a keybind legend, also inside a border, and updates to reflect whichever panel/mode currently has focus (the legend for the file tree differs from the legend for the metadata tree or an open dialog). Format: `[key] Action`, pairs separated by ` | `, e.g. `[←/→/↑/↓] Navigate | [e/Enter] Edit | [c] Copy | [d] Delete`. Only show keys that are actually valid in the current context.
 - The middle area is split vertically in a 35/65% proportion: the left panel contains the file explorer, and the right panel displays the metadata JSON tree.
 - On Windows, the root directory lists logical drives with folder icons, whereas Unix systems start at `/`.
 - All UI copy (messages, prompts, labels) is in English, regardless of the terminal's locale.
@@ -13,8 +13,9 @@
 - Only directories and files detected as PNG/JPEG/WebP by magic bytes (see `03-business-logic.md`) are listed — anything else is omitted from the list entirely, not just unstyled. This scan happens once per directory (on entry, on `r`, or on a watch-triggered refresh — see below), not on every keystroke.
 - Icons: a folder icon for directories, an image icon for PNG/JPEG/WebP files. Use plain Unicode symbols, not Nerd Font glyphs — Nerd Fonts require a patched font the user may not have installed, which would render as missing-glyph boxes and undermine the cross-platform/WSL2 consistency required below.
 - Navigation:
-  - **Up/Down** — move the cursor among the currently visible entries.
-  - **Right** — enter the selected directory. No-op on a file entry. No-op specifically on the `..` entry (going up is Left's job — see below; entering `..` via Right would be a redundant, confusing second way to do the same thing).
+  - **Up/Down** — move the cursor among the currently visible entries. Wraps around: Up from the first entry moves to the last, Down from the last moves to the first.
+  - **PageUp/PageDown** — move the cursor by one panel's height. Clamps at the ends (stops on the first/last entry) rather than wrapping.
+  - **Right** — on a directory, enters it. On a supported file, switches focus to the metadata panel (its preview is already loading/loaded — see Loading states below) rather than doing nothing. No-op specifically on the `..` entry (going up is Left's job — see below; entering `..` via Right would be a redundant, confusing second way to do the same thing).
   - **Left** — go to the parent directory, regardless of which entry the cursor is currently on (not only when the cursor is on `..`).
 - **`c`** — copies the selected entry's name (file or directory) as plain text.
 - **Ctrl+C** — copies the selected entry's full absolute filesystem path.
@@ -26,13 +27,15 @@
 - When no file is loaded: displays "Open an image to load metadata." instead of a tree.
 - Header/label: shows **"Metadata"** while at the root (nothing drilled into). Once the user has drilled into a branch, the header instead shows the breadcrumb path to the current location, e.g. `PngText > comment > workflow > nodes`. An array index is appended to its parent segment in brackets rather than being its own segment, e.g. `PngText > comment > workflow > nodes[3]`.
 - Navigation:
-  - **Up/Down** — move the cursor among the currently visible rows.
+  - **Up/Down** — move the cursor among the currently visible rows. Wraps around: Up from the first row moves to the last, Down from the last moves to the first.
+  - **PageUp/PageDown** — move the cursor by one panel's height. Clamps at the ends rather than wrapping.
   - **Right** — expand/drill into the selected branch (updates the breadcrumb).
-  - **Left** — collapse/go back up one level (updates the breadcrumb back toward "Metadata").
+  - **Left** — collapse/go back up one level (updates the breadcrumb back toward "Metadata"). If there's no further level to collapse (already at the root breadcrumb) — or the selected file has no metadata at all — Left instead switches focus to the file tree panel.
 - Editing:
   - **Enter** — on an object/array node, behaves exactly like Right (drill in). On a scalar (leaf) node, opens the value editor for that leaf directly, since there's nowhere further to drill.
   - **`e`** — opens an editor for the selected node's entire subtree as raw JSON5 text, on *any* node (leaf or branch), scoped to only that node and its descendants — independent of how deep Enter/Right has drilled.
-- **`n`** — creates a new entry inside the branch the user is currently drilled into (per the breadcrumb, not necessarily the cursor row). If that branch is an object, prompts for a key name then a value; if it's an array, prompts for a value only (appended at the end). The value accepts the same lenient JSON5 syntax as `--set`.
+- **`n`** — creates a new entry inside the branch the user is currently drilled into (per the breadcrumb, not necessarily the cursor row). If that branch is an object, prompts for a key name then a value; if it's an array, prompts for a value only (appended at the end).
+- **Leaf value parsing** (applies to both `n`'s value prompt and Enter-on-a-leaf editing, *not* to `e`'s subtree editor): if the typed text starts with `{` or `[`, it's parsed strictly as JSON5, same as `--set`, and a parse failure is a validation error as usual. Otherwise, JSON5 parsing is tried first (so bare literals like `true`, `false`, `null`, a number, or an explicitly quoted string all work); if that fails too, the raw typed text is taken as a plain string, as if it had been quoted. This means typing e.g. `asdf` as a value just works as the string `"asdf"` — the common case doesn't require the user to type quotes by hand.
 - **`d`** — deletes the currently selected key/entry. Confirmation gate applies (see Confirmations below).
 - **`c`** — copies the selected node's value: a scalar copies its raw value (unquoted for strings); an object/array copies its compact JSON, directly reusable as a `--set` payload elsewhere.
 - **Ctrl+C** — copies the full path to the selected node in dot/bracket notation, e.g. `PngText.comment.workflow.nodes[3]`. This is a TUI-only convenience and does not reintroduce CLI dot-notation addressing (see `02-cli-interface.md`).

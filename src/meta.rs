@@ -7,11 +7,8 @@ use crate::error::Error;
 use crate::format::ImageFormat;
 use crate::png;
 
-/// Keyword of the PNG `tEXt` chunk carrying the `custom` section (see `06-data-schemas.md`).
-const PNG_CUSTOM_KEYWORD: &str = "ime:custom";
-
-/// EXIF tag code of `UserComment`, the on-disk carrier of the `custom`
-/// section on JPEG/WebP. It never appears under `exif` in output.
+/// EXIF tag code of `UserComment`, the on-disk carrier of JPEG/WebP's
+/// `custom.UserComment`. It never appears under `exif` in output.
 const USER_COMMENT_CODE: u16 = 0x9286;
 
 /// Character-code prefix of a `UserComment` payload holding JSON (`06-data-schemas.md`).
@@ -102,10 +99,12 @@ fn read_metadata_impl(bytes: &[u8], format: ImageFormat, traverse_output: bool) 
                 continue;
             }
             if code == USER_COMMENT_CODE && group == ExifTagGroup::EXIF {
-                if format != ImageFormat::Png
-                    && let EntryValue::Undefined(payload) = entry.value()
-                {
-                    user_comment = Some(payload.clone());
+                if format != ImageFormat::Png {
+                    match entry.value() {
+                        EntryValue::Undefined(payload) => user_comment = Some(payload.clone()),
+                        EntryValue::Text(text) => user_comment = Some(text.as_bytes().to_vec()),
+                        _ => {}
+                    }
                 }
                 continue;
             }
@@ -202,25 +201,40 @@ fn number_or_string(n: f64) -> Value {
     }
 }
 
-/// Read the `custom` section from the PNG `tEXt` chunk: hex-encoded compact JSON.
+/// Read the `custom` section from PNG text chunks: every `tEXt`/`zTXt`/`iTXt`
+/// chunk becomes `PngText.<keyword>` with its raw text. JSON embedding happens
+/// in the shared traversal pass; duplicate keywords resolve last-wins.
 fn read_png_custom(chunks: &[png::Chunk]) -> Option<Map<String, Value>> {
-    let payload = png::find_text(chunks, PNG_CUSTOM_KEYWORD)?;
-    let hex_text = std::str::from_utf8(payload).unwrap_or("");
-    hex::decode(hex_text.trim()).ok().and_then(|json_bytes| decode_custom_json(&json_bytes))
-}
-
-/// Read the `custom` section from a JPEG/WebP `UserComment` payload: compact
-/// JSON behind the standard 8-byte `"ASCII\0\0\0"` prefix.
-fn decode_user_comment(payload: &[u8]) -> Option<Map<String, Value>> {
-    decode_custom_json(payload.strip_prefix(USER_COMMENT_ASCII_PREFIX)?)
-}
-
-fn decode_custom_json(json_bytes: &[u8]) -> Option<Map<String, Value>> {
-    let text = std::str::from_utf8(json_bytes).ok()?;
-    match serde_json::from_str::<Value>(text).ok()? {
-        Value::Object(map) => Some(map),
-        _ => None,
+    let mut texts = Map::new();
+    for chunk in png::text_chunks(chunks) {
+        texts.insert(chunk.keyword, Value::String(chunk.text));
     }
+    if texts.is_empty() {
+        return None;
+    }
+    let mut custom = Map::new();
+    custom.insert("PngText".to_string(), Value::Object(texts));
+    Some(custom)
+}
+
+/// Read `custom.UserComment` from a JPEG/WebP `UserComment` payload: the raw
+/// text behind the standard 8-byte prefix (or the whole payload when another
+/// tool wrote it prefix-less), with trailing padding stripped. JSON embedding
+/// happens in the shared traversal pass; anything else stays a plain string.
+fn decode_user_comment(payload: &[u8]) -> Option<Map<String, Value>> {
+    let text = payload.strip_prefix(USER_COMMENT_ASCII_PREFIX).unwrap_or(payload);
+    let text = String::from_utf8_lossy(strip_trailing_nul(text)).into_owned();
+    let mut custom = Map::new();
+    custom.insert("UserComment".to_string(), Value::String(text));
+    Some(custom)
+}
+
+fn strip_trailing_nul(bytes: &[u8]) -> &[u8] {
+    let mut end = bytes.len();
+    while end > 0 && bytes[end - 1] == 0 {
+        end -= 1;
+    }
+    &bytes[..end]
 }
 
 /// Smart JSON traversal (`03-business-logic.md`, output-only): any string

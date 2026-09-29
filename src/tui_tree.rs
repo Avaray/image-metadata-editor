@@ -53,14 +53,24 @@ impl MetaTree {
         self.cursor
     }
 
+    /// Move the cursor, wrapping around at the ends.
     pub fn move_cursor(&mut self, delta: isize) {
         let rows = self.rows().len();
         if rows == 0 {
             self.cursor = 0;
             return;
         }
-        let next = self.cursor as isize + delta;
-        self.cursor = next.clamp(0, rows as isize - 1) as usize;
+        self.cursor = (self.cursor as isize + delta).rem_euclid(rows as isize) as usize;
+    }
+
+    /// Move the cursor by a page, clamping at the ends (no wrap).
+    pub fn move_cursor_clamped(&mut self, delta: isize) {
+        let rows = self.rows().len();
+        if rows == 0 {
+            self.cursor = 0;
+            return;
+        }
+        self.cursor = (self.cursor as isize + delta).clamp(0, rows as isize - 1) as usize;
     }
 
     pub fn set_cursor(&mut self, index: usize) {

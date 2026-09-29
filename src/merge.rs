@@ -73,10 +73,30 @@ fn is_empty_value(value: &Value) -> bool {
     }
 }
 
-/// Serialize the `custom` section deterministically: compact JSON with keys
+/// Serialize a JSON value deterministically: compact JSON with object keys
 /// sorted alphabetically at every nesting level.
-pub fn serialize_custom(map: &Map<String, Value>) -> Result<Vec<u8>, Error> {
-    serde_json::to_vec(&sorted_value(&Value::Object(map.clone()))).map_err(|err| Error::runtime(format!("cannot encode custom metadata as JSON: {err}")))
+pub fn serialize_canonical(value: &Value) -> Result<String, Error> {
+    serde_json::to_string(&sorted_value(value)).map_err(|err| Error::runtime(format!("cannot encode custom metadata as JSON: {err}")))
+}
+
+/// Escape every non-ASCII character as `\uXXXX` (with surrogate pairs past
+/// the BMP), for carriers that must stay ASCII-safe (JPEG/WebP UserComment).
+pub fn ascii_escape(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        if ch.is_ascii() {
+            out.push(ch);
+        } else {
+            let code = ch as u32;
+            if code <= 0xFFFF {
+                out.push_str(&format!("\\u{code:04x}"));
+            } else {
+                let v = code - 0x1_0000;
+                out.push_str(&format!("\\u{:04x}\\u{:04x}", 0xD800 + (v >> 10), 0xDC00 + (v & 0x3FF)));
+            }
+        }
+    }
+    out
 }
 
 fn sorted_value(value: &Value) -> Value {

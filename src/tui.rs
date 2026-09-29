@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::io::IsTerminal as _;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
@@ -30,6 +31,16 @@ pub fn run(initial: &Path, power: bool, watch: bool) -> Result<(), Error> {
         (parent, name)
     };
 
+    // Raw mode alone cannot detect a headless launch: crossterm enables it
+    // via /dev/tty (the controlling terminal), which exists even when stdio
+    // is piped, e.g. under `cargo test` in a real terminal. Gate on stdio
+    // explicitly so the TUI fails fast instead of drawing into a pipe.
+    if !std::io::stdin().is_terminal() {
+        return Err(Error::runtime("cannot start TUI: standard input is not a terminal"));
+    }
+    if !std::io::stdout().is_terminal() {
+        return Err(Error::runtime("cannot start TUI: standard output is not a terminal"));
+    }
     terminal::enable_raw_mode().map_err(|err| Error::runtime(format!("cannot start TUI: {err}")))?;
     let mut stdout = std::io::stdout();
     execute!(stdout, terminal::EnterAlternateScreen).map_err(|err| Error::runtime(format!("cannot start TUI: {err}")))?;
@@ -139,6 +150,8 @@ pub(crate) struct App {
     pub preview_loading: Option<(PathBuf, Instant)>,
     pub preview_pending: Option<(PathBuf, Instant)>,
     pub meta_scroll: usize,
+    pub file_view_height: usize,
+    pub meta_view_height: usize,
     pub restore_drill: Option<(PathBuf, Vec<Segment>, usize)>,
     pub overlay: Option<Overlay>,
     pub status: Option<String>,
@@ -173,6 +186,8 @@ impl App {
             preview_loading: None,
             preview_pending: None,
             meta_scroll: 0,
+            file_view_height: 0,
+            meta_view_height: 0,
             restore_drill: None,
             overlay: None,
             status: None,
@@ -430,13 +445,19 @@ impl App {
         match (key.code, key.modifiers) {
             (KeyCode::Up, KeyModifiers::NONE) => self.move_file_cursor(-1),
             (KeyCode::Down, KeyModifiers::NONE) => self.move_file_cursor(1),
+            (KeyCode::PageUp, KeyModifiers::NONE) => self.page_file_cursor(-(self.file_view_height.max(1) as isize)),
+            (KeyCode::PageDown, KeyModifiers::NONE) => self.page_file_cursor(self.file_view_height.max(1) as isize),
             (KeyCode::Right, KeyModifiers::NONE) | (KeyCode::Enter, KeyModifiers::NONE) => {
                 if self.pending_dir.is_some() {
                     return;
                 }
-                match self.entries.get(self.file_cursor).cloned() {
+                match self.entries.get(self.file_cursor) {
                     // Entering `..` via Right would duplicate Left; going up is Left's job.
-                    Some(entry) if entry.is_dir && !entry.is_parent => self.navigate_to(entry.path),
+                    Some(entry) if entry.is_dir && !entry.is_parent => {
+                        let path = entry.path.clone();
+                        self.navigate_to(path);
+                    }
+                    Some(entry) if !entry.is_dir => self.focus = Focus::Meta,
                     _ => {}
                 }
             }
@@ -478,13 +499,28 @@ impl App {
                     tree.move_cursor(1);
                 }
             }
+            (KeyCode::PageUp, KeyModifiers::NONE) => {
+                let step = self.meta_view_height.max(1) as isize;
+                if let Some(tree) = self.tree.as_mut() {
+                    tree.move_cursor_clamped(-step);
+                }
+            }
+            (KeyCode::PageDown, KeyModifiers::NONE) => {
+                let step = self.meta_view_height.max(1) as isize;
+                if let Some(tree) = self.tree.as_mut() {
+                    tree.move_cursor_clamped(step);
+                }
+            }
             (KeyCode::Right, KeyModifiers::NONE) => {
                 if let Some(tree) = self.tree.as_mut() {
                     tree.drill_into_selected();
                 }
             }
             (KeyCode::Left, KeyModifiers::NONE) => {
-                if let Some(tree) = self.tree.as_mut() {
+                let at_root = self.tree.as_ref().is_none_or(|tree| tree.drill().is_empty());
+                if at_root {
+                    self.focus = Focus::Files;
+                } else if let Some(tree) = self.tree.as_mut() {
                     tree.drill_up();
                 }
             }
@@ -531,6 +567,15 @@ impl App {
     }
 
     fn move_file_cursor(&mut self, delta: isize) {
+        if self.entries.is_empty() {
+            return;
+        }
+        let len = self.entries.len() as isize;
+        self.file_cursor = (self.file_cursor as isize + delta).rem_euclid(len) as usize;
+        self.selection_changed();
+    }
+
+    fn page_file_cursor(&mut self, delta: isize) {
         if self.entries.is_empty() {
             return;
         }
@@ -641,7 +686,7 @@ impl App {
                 KeyCode::Esc => {}
                 KeyCode::Enter if key.modifiers == KeyModifiers::NONE => {
                     let typed = input.value().to_string();
-                    match self.leaf_value(&path, &typed) {
+                    match parse_leaf_value(&typed) {
                         Ok(value) => match self.commit_edit(&path, &Edit::Set(value)) {
                             Ok(()) => {}
                             Err(message) => {
@@ -677,7 +722,7 @@ impl App {
                 KeyCode::Esc => {}
                 KeyCode::Enter if key.modifiers == KeyModifiers::NONE => {
                     let typed = input.value().to_string();
-                    match parse_json5(&typed) {
+                    match parse_leaf_value(&typed) {
                         Ok(value) => {
                             let drill = self.tree.as_ref().map(|tree| tree.drill().to_vec()).unwrap_or_default();
                             let (target, edit) = match &name {
@@ -807,16 +852,6 @@ impl App {
 
     // -- writes -------------------------------------------------------------
 
-    /// The confirmed value of a leaf edit: strings stay raw text (what you
-    /// type is what is stored), anything else parses as lenient JSON5.
-    fn leaf_value(&self, path: &[Segment], typed: &str) -> Result<Value, String> {
-        let current = self.tree.as_ref().and_then(|tree| tree.value_at(path));
-        if matches!(current, Some(Value::String(_))) {
-            return Ok(Value::String(typed.to_string()));
-        }
-        parse_json5(typed)
-    }
-
     /// Validate and immediately persist one tree edit through the same
     /// atomic-write-and-verify pipeline `--set` uses, then reload the preview.
     fn commit_edit(&mut self, path: &[Segment], edit: &Edit) -> Result<(), String> {
@@ -913,6 +948,19 @@ fn split_at_char(text: &str, cursor: usize) -> (String, String) {
 
 fn parse_json5(text: &str) -> Result<Value, String> {
     json5::from_str(text).map_err(|err| format!("invalid JSON: {err}"))
+}
+
+/// The confirmed value of a leaf edit or `n` value prompt: text starting
+/// with `{`/`[` parses strictly as JSON5 (errors stay open), anything else
+/// tries JSON5 first and falls back to a plain string.
+fn parse_leaf_value(typed: &str) -> Result<Value, String> {
+    if typed.trim_start().starts_with(['{', '[']) {
+        return parse_json5(typed);
+    }
+    match parse_json5(typed) {
+        Ok(value) => Ok(value),
+        Err(_) => Ok(Value::String(typed.to_string())),
+    }
 }
 
 fn wipe_file(path: &Path) -> Result<(), String> {

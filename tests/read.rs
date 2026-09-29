@@ -23,8 +23,12 @@ fn stdout_json(assert: assert_cmd::assert::Assert) -> Value {
     serde_json::from_slice(&output.stdout).expect("stdout must be valid JSON")
 }
 
-fn expected_custom() -> Value {
-    serde_json::json!({"nested": {"a": [1, 2], "s": "x"}, "project": "stage1", "rating": 5})
+fn expected_png_custom() -> Value {
+    serde_json::json!({"PngText": {"comment": "a stage1 photo", "workflow": {"nested": {"a": [1, 2], "s": "x"}, "project": "stage1", "rating": 5}}})
+}
+
+fn expected_comment_custom() -> Value {
+    serde_json::json!({"UserComment": {"nested": {"a": [1, 2], "s": "x"}, "project": "stage1", "rating": 5}})
 }
 
 fn expected_exif() -> Value {
@@ -53,19 +57,43 @@ fn expected_exif() -> Value {
 #[test]
 fn read_png_prints_exif_and_custom() {
     let value = stdout_json(run_read(&fixture("photo.png")));
-    assert_eq!(value, serde_json::json!({"exif": expected_exif(), "custom": expected_custom()}));
+    assert_eq!(value, serde_json::json!({"exif": expected_exif(), "custom": expected_png_custom()}));
 }
 
 #[test]
 fn read_jpeg_prints_exif_and_custom() {
     let value = stdout_json(run_read(&fixture("photo.jpg")));
-    assert_eq!(value, serde_json::json!({"exif": expected_exif(), "custom": expected_custom()}));
+    assert_eq!(value, serde_json::json!({"exif": expected_exif(), "custom": expected_comment_custom()}));
 }
 
 #[test]
 fn read_webp_prints_exif_and_custom() {
     let value = stdout_json(run_read(&fixture("photo.webp")));
-    assert_eq!(value, serde_json::json!({"exif": expected_exif(), "custom": expected_custom()}));
+    assert_eq!(value, serde_json::json!({"exif": expected_exif(), "custom": expected_comment_custom()}));
+}
+
+#[test]
+fn read_comfyui_chunks_as_nested_pngtext() {
+    let value = stdout_json(run_read(&fixture("comfy.png")));
+    let texts = &value["custom"]["PngText"];
+    assert_eq!(texts["workflow"]["3"]["class_type"], Value::String("KSampler".to_string()));
+    assert_eq!(texts["prompt"]["3"]["seed"], serde_json::json!(42));
+}
+
+#[test]
+fn read_plain_text_comment_as_raw_string() {
+    let value = stdout_json(run_read(&fixture("note.jpg")));
+    assert_eq!(value["custom"]["UserComment"], Value::String("vacation in the mountains".to_string()));
+}
+
+#[test]
+fn read_native_and_legacy_png_chunks_transparently() {
+    let value = stdout_json(run_read(&fixture("ancillary.png")));
+    let texts = value["custom"]["PngText"].as_object().unwrap();
+    assert_eq!(texts["Comment"], Value::String("hello".to_string()), "zTXt chunk must surface");
+    let legacy = texts["ime:custom"].as_str().unwrap();
+    assert_eq!(legacy.len(), 120, "legacy blob must surface as-is, not migrate");
+    assert!(legacy.chars().all(|c| c.is_ascii_hexdigit()));
 }
 
 #[test]
@@ -132,7 +160,7 @@ fn reads_image_from_stdin() {
     let mut cmd = Command::cargo_bin("ime").unwrap();
     let assert = cmd.arg("-").write_stdin(bytes).assert();
     let value = stdout_json(assert);
-    assert_eq!(value, serde_json::json!({"exif": expected_exif(), "custom": expected_custom()}));
+    assert_eq!(value, serde_json::json!({"exif": expected_exif(), "custom": expected_comment_custom()}));
 }
 
 #[test]

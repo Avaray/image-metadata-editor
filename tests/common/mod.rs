@@ -68,6 +68,53 @@ pub fn png_chunk_types(bytes: &[u8]) -> Vec<String> {
     out
 }
 
+/// Independent `iTXt` oracle: the text of the chunk with `keyword`, or `None`.
+/// Only uncompressed chunks are decoded (that is all `ime` ever writes).
+pub fn png_itxt_text(bytes: &[u8], keyword: &str) -> Option<String> {
+    let mut pos = 8;
+    while pos + 8 <= bytes.len() {
+        let len = u32::from_be_bytes([bytes[pos], bytes[pos + 1], bytes[pos + 2], bytes[pos + 3]]) as usize;
+        let data = bytes.get(pos + 8..pos + 8 + len)?;
+        if &bytes[pos + 4..pos + 8] == b"iTXt" {
+            let nul = data.iter().position(|&b| b == 0)?;
+            if &data[..nul] == keyword.as_bytes() {
+                if data.get(nul + 1) != Some(&0) {
+                    return None;
+                }
+                let rest = data.get(nul + 3..)?;
+                let lang = rest.iter().position(|&b| b == 0)?;
+                let translated = rest[lang + 1..].iter().position(|&b| b == 0)?;
+                return Some(String::from_utf8_lossy(&rest[lang + 1 + translated + 1..]).into_owned());
+            }
+        }
+        if &bytes[pos + 4..pos + 8] == b"IEND" {
+            break;
+        }
+        pos += 12 + len;
+    }
+    None
+}
+
+/// Keywords of every `iTXt` chunk, in file order.
+pub fn png_itxt_keywords(bytes: &[u8]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut pos = 8;
+    while pos + 8 <= bytes.len() {
+        let len = u32::from_be_bytes([bytes[pos], bytes[pos + 1], bytes[pos + 2], bytes[pos + 3]]) as usize;
+        let Some(data) = bytes.get(pos + 8..pos + 8 + len) else { break };
+        if &bytes[pos + 4..pos + 8] == b"iTXt"
+            && let Some(nul) = data.iter().position(|&b| b == 0)
+        {
+            out.push(String::from_utf8_lossy(&data[..nul]).into_owned());
+        }
+        if &bytes[pos + 4..pos + 8] == b"IEND" {
+            break;
+        }
+        pos += 12 + len;
+    }
+    out
+}
+
 pub fn png_text_payload(bytes: &[u8], keyword: &str) -> Option<Vec<u8>> {
     let mut pos = 8;
     while pos + 8 <= bytes.len() {

@@ -46,11 +46,12 @@ fn batch_read_prints_aggregated_object_without_descending() {
     let value = read_batch(&root, &[]);
     let obj = value.as_object().unwrap();
     assert_eq!(obj.len(), 2, "only top-level images, no subdir descent");
-    for name in ["a.png", "b.jpg"] {
-        let entry = &obj[&key(&root, name)];
-        assert_eq!(entry["exif"]["Make"], Value::String("TestMake".to_string()), "{name}");
-        assert_eq!(entry["custom"]["project"], Value::String("stage1".to_string()), "{name}");
-    }
+    let png = &obj[&key(&root, "a.png")];
+    assert_eq!(png["exif"]["Make"], Value::String("TestMake".to_string()));
+    assert_eq!(png["custom"]["PngText"]["workflow"]["project"], Value::String("stage1".to_string()));
+    let jpg = &obj[&key(&root, "b.jpg")];
+    assert_eq!(jpg["exif"]["Make"], Value::String("TestMake".to_string()));
+    assert_eq!(jpg["custom"]["UserComment"]["project"], Value::String("stage1".to_string()));
 }
 
 #[test]
@@ -127,7 +128,8 @@ fn recursive_symlink_cycle_is_a_per_file_error_not_a_hang() {
 #[test]
 fn batch_set_updates_every_file_with_progress_and_summary() {
     let (_dir, root) = work_dir(&[("photo.png", "a.png"), ("photo.jpg", "b.jpg"), ("not_an_image.txt", "skip.txt")]);
-    let assert = run_ime().arg(&root).arg("--set").arg(r#"{"custom": {"batch": true}}"#).assert().success().code(0).stdout(predicate::str::is_empty());
+    // One exif payload covers the mixed-format batch (custom shapes differ per format).
+    let assert = run_ime().arg(&root).arg("--set").arg(r#"{"exif": {"Make": "Batch"}}"#).assert().success().code(0).stdout(predicate::str::is_empty());
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr);
     let lines: Vec<&str> = stderr.lines().collect();
     assert_eq!(lines.len(), 3, "two progress lines plus summary: {stderr}");
@@ -135,21 +137,35 @@ fn batch_set_updates_every_file_with_progress_and_summary() {
     assert!(lines[1].starts_with("[2/2] OK ") && lines[1].contains("b.jpg"), "second line: {}", lines[1]);
     assert_eq!(lines[2], "Done: 2/2 succeeded, 0 errors");
     for name in ["a.png", "b.jpg"] {
-        assert_eq!(read_json(&root.join(name))["custom"]["batch"], json!(true), "{name} must be updated in place");
+        assert_eq!(read_json(&root.join(name))["exif"]["Make"], Value::String("Batch".to_string()), "{name} must be updated in place");
+    }
+}
+
+#[test]
+fn batch_set_custom_per_format() {
+    let (_dir, pngs) = work_dir(&[("photo.png", "a.png"), ("photo.png", "b.png")]);
+    run_ime().arg(&pngs).arg("--set").arg(r#"{"custom": {"PngText": {"batch": "png"}}}"#).assert().success();
+    for name in ["a.png", "b.png"] {
+        assert_eq!(read_json(&pngs.join(name))["custom"]["PngText"]["batch"], Value::String("png".to_string()), "{name}");
+    }
+    let (_dir, jpgs) = work_dir(&[("photo.jpg", "a.jpg"), ("photo.jpg", "b.jpg")]);
+    run_ime().arg(&jpgs).arg("--set").arg(r#"{"custom": {"UserComment": {"batch": "jpg"}}}"#).assert().success();
+    for name in ["a.jpg", "b.jpg"] {
+        assert_eq!(read_json(&jpgs.join(name))["custom"]["UserComment"]["batch"], Value::String("jpg".to_string()), "{name}");
     }
 }
 
 #[test]
 fn batch_set_reports_bad_file_and_continues() {
     let (_dir, root) = work_dir(&[("photo.png", "good.png"), ("corrupt.jpg", "bad.jpg")]);
-    let assert = run_ime().arg(&root).arg("--set").arg(r#"{"custom": {"k": 1}}"#).assert().failure().code(1).stdout(predicate::str::is_empty());
+    let assert = run_ime().arg(&root).arg("--set").arg(r#"{"custom": {"PngText": {"k": "v"}}}"#).assert().failure().code(1).stdout(predicate::str::is_empty());
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr);
     let lines: Vec<&str> = stderr.lines().collect();
     assert_eq!(lines.len(), 3, "{stderr}");
     assert!(lines[0].starts_with("[1/2] ERROR ") && lines[0].contains("bad.jpg"), "first line: {}", lines[0]);
     assert!(lines[1].starts_with("[2/2] OK ") && lines[1].contains("good.png"), "second line: {}", lines[1]);
     assert_eq!(lines[2], "Done: 1/2 succeeded, 1 errors");
-    assert_eq!(read_json(&root.join("good.png"))["custom"]["k"], json!(1), "good file must still be updated");
+    assert_eq!(read_json(&root.join("good.png"))["custom"]["PngText"]["k"], Value::String("v".to_string()), "good file must still be updated");
 }
 
 #[test]
@@ -192,13 +208,14 @@ fn dry_run_single_file_leaves_everything_untouched() {
     let (dir, root) = work_dir(&[("photo.jpg", "photo.jpg")]);
     let path = root.join("photo.jpg");
     let before = std::fs::read(&path).unwrap();
-    let assert = run_ime().arg(&path).arg("--set").arg(r#"{"exif": {"Make": "Ghost"}, "custom": {"rating": null}}"#).arg("--dry-run").assert().success();
+    let assert = run_ime().arg(&path).arg("--set").arg(r#"{"exif": {"Make": "Ghost"}, "custom": {"UserComment": {"rating": null}}}"#).arg("--dry-run").assert().success();
     let output = assert.get_output();
     assert!(output.stderr.is_empty(), "stderr must be empty: {:?}", String::from_utf8_lossy(&output.stderr));
     let value: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["exif"]["Make"], Value::String("Ghost".to_string()));
-    assert!(!value["custom"].as_object().unwrap().contains_key("rating"), "deleted key must be gone from the preview");
-    assert_eq!(value["custom"]["project"], Value::String("stage1".to_string()), "untouched keys stay in the preview");
+    let comment = value["custom"]["UserComment"].as_object().unwrap();
+    assert!(!comment.contains_key("rating"), "deleted key must be gone from the preview");
+    assert_eq!(comment["project"], Value::String("stage1".to_string()), "untouched keys stay in the preview");
     assert_eq!(std::fs::read(&path).unwrap(), before, "file must be byte-identical");
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1, "no temp files may be left behind");
 
@@ -210,25 +227,26 @@ fn dry_run_single_file_leaves_everything_untouched() {
 
 #[test]
 fn set_stdin_and_file_payloads_match_inline() {
-    for (name, key) in [("photo.png", "via_stdin"), ("photo.jpg", "via_stdin"), ("photo.webp", "via_stdin")] {
+    for (name, inner) in [("photo.png", "PngText"), ("photo.jpg", "UserComment"), ("photo.webp", "UserComment")] {
         let (_dir, root) = work_dir(&[(name, "img")]);
         let path = root.join("img");
-        run_ime().arg(&path).arg("--set").arg("-").write_stdin(format!(r#"{{"custom": {{"{key}": true}}}}"#)).assert().success();
-        assert_eq!(read_json(&path)["custom"][key], json!(true), "{name}: --set - must apply");
+        run_ime().arg(&path).arg("--set").arg("-").write_stdin(format!(r#"{{"custom": {{"{inner}": {{"via_stdin": "yes"}}}}}}"#)).assert().success();
+        assert_eq!(read_json(&path)["custom"][inner]["via_stdin"], Value::String("yes".to_string()), "{name}: --set - must apply");
     }
 
     let (_dir, root) = work_dir(&[("photo.png", "img.png")]);
     let payload = root.join("tags.json");
-    std::fs::write(&payload, "{custom: {from_file: 7,},}").unwrap();
+    std::fs::write(&payload, "{custom: {PngText: {from_file: 7,},},}").unwrap();
     let at = format!("@{}", payload.display());
     run_ime().arg(root.join("img.png")).arg("--set").arg(&at).assert().success();
-    assert_eq!(read_json(&root.join("img.png"))["custom"]["from_file"], json!(7), "JSON5 from @file must apply");
+    // Chunk text is text: the JSON number round-trips as its string form.
+    assert_eq!(read_json(&root.join("img.png"))["custom"]["PngText"]["from_file"], Value::String("7".to_string()), "JSON5 from @file must apply");
 
     // `--set -` payloads also work in batch mode: one payload, every file.
-    let (_dir, root) = work_dir(&[("photo.png", "a.png"), ("photo.jpg", "b.jpg")]);
-    run_ime().arg(&root).arg("--set").arg("-").write_stdin(r#"{"custom": {"shared": 1}}"#).assert().success();
-    for name in ["a.png", "b.jpg"] {
-        assert_eq!(read_json(&root.join(name))["custom"]["shared"], json!(1), "{name}");
+    let (_dir, root) = work_dir(&[("photo.jpg", "a.jpg"), ("photo.jpg", "b.jpg")]);
+    run_ime().arg(&root).arg("--set").arg("-").write_stdin(r#"{"custom": {"UserComment": {"shared": 1}}}"#).assert().success();
+    for name in ["a.jpg", "b.jpg"] {
+        assert_eq!(read_json(&root.join(name))["custom"]["UserComment"]["shared"], json!(1), "{name}");
     }
 }
 
@@ -242,12 +260,12 @@ fn set_payload_file_errors_are_runtime_errors() {
 fn stdin_write_without_output_goes_to_stdout() {
     let (_dir, root) = work_dir(&[("photo.png", "in.png")]);
     let input = std::fs::read(root.join("in.png")).unwrap();
-    let assert = run_ime().arg("-").arg("--set").arg(r#"{"custom": {"piped": true}}"#).write_stdin(input).assert().success();
+    let assert = run_ime().arg("-").arg("--set").arg(r#"{"custom": {"PngText": {"piped": "yes"}}}"#).write_stdin(input).assert().success();
     let stdout = assert.get_output().stdout.clone();
     assert!(stdout.starts_with(&[0x89, 0x50, 0x4E, 0x47]), "stdout must be PNG image bytes");
     let roundtrip = root.join("roundtrip.png");
     std::fs::write(&roundtrip, &stdout).unwrap();
-    assert_eq!(read_json(&roundtrip)["custom"]["piped"], json!(true));
+    assert_eq!(read_json(&roundtrip)["custom"]["PngText"]["piped"], Value::String("yes".to_string()));
     assert!(!root.join("-").exists(), "no file named '-' may be created");
     assert_eq!(std::fs::read(root.join("in.png")).unwrap(), std::fs::read(fixture("photo.png")).unwrap(), "no input file to modify; fixtures stay pristine");
 }

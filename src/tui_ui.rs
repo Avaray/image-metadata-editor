@@ -10,7 +10,7 @@ use crate::tui::{App, Focus, Overlay};
 
 pub fn render(app: &mut App, frame: &mut Frame) {
     let area = frame.area();
-    let rows = Layout::vertical([Constraint::Length(1), Constraint::Min(0), Constraint::Length(1)]).split(area);
+    let rows = Layout::vertical([Constraint::Length(3), Constraint::Min(0), Constraint::Length(3)]).split(area);
     let panels = Layout::horizontal([Constraint::Percentage(35), Constraint::Percentage(65)]).split(rows[1]);
 
     render_top(app, frame, rows[0]);
@@ -20,32 +20,42 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     render_overlay(app, frame, area);
 }
 
+fn chrome_block() -> Block<'static> {
+    Block::bordered().border_style(Style::default().fg(Color::DarkGray))
+}
+
 fn render_top(app: &App, frame: &mut Frame, area: Rect) {
+    let block = chrome_block();
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
     let mut text = if app.dir.as_os_str().is_empty() { "Drives".to_string() } else { app.dir.display().to_string() };
     if app.watcher.is_some() {
         text.push_str("  [watching]");
     }
-    frame.render_widget(Paragraph::new(text).style(Style::default().add_modifier(Modifier::BOLD)), area);
+    frame.render_widget(Paragraph::new(text).style(Style::default().add_modifier(Modifier::BOLD)), inner);
 }
 
 fn render_bottom(app: &App, frame: &mut Frame, area: Rect) {
+    let block = chrome_block();
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
     let legend = if let Some(status) = &app.status { Line::styled(status.clone(), Style::default().fg(Color::Yellow)) } else { Line::raw(legend_text(app)) };
-    frame.render_widget(Paragraph::new(legend), area);
+    frame.render_widget(Paragraph::new(legend), inner);
 }
 
 fn legend_text(app: &App) -> &'static str {
     if let Some(overlay) = &app.overlay {
         return match overlay {
-            Overlay::Search { .. } => "Enter jump to match · Esc cancel",
-            Overlay::LeafEdit { .. } | Overlay::NewKey { .. } | Overlay::NewValue { .. } => "Enter confirm · Esc cancel",
-            Overlay::SubtreeEdit { .. } => "Enter confirm · Alt+Enter newline · Esc cancel",
-            Overlay::Confirm { .. } => "Left/Right select · Enter confirm · Esc cancel",
-            Overlay::About => "Esc close",
+            Overlay::Search { .. } => "[Enter] Jump to match | [Esc] Cancel",
+            Overlay::LeafEdit { .. } | Overlay::NewKey { .. } | Overlay::NewValue { .. } => "[Enter] Confirm | [Esc] Cancel",
+            Overlay::SubtreeEdit { .. } => "[Enter] Confirm | [Alt+Enter] Newline | [Esc] Cancel",
+            Overlay::Confirm { .. } => "[Left/Right] Select | [Enter] Confirm | [Esc] Cancel",
+            Overlay::About => "[Esc] Close",
         };
     }
     match app.focus {
-        Focus::Files => "Up/Down move · Right open · Left up · Tab metadata · / search · c copy name · Ctrl+C copy path · r rescan · w wipe · F1 about · q quit",
-        Focus::Meta => "Up/Down move · Right drill · Left back · Enter open/edit · e edit JSON · n new · d delete · c copy value · Ctrl+C copy path · Tab files · / search · w wipe · F1 about · q quit",
+        Focus::Files => "[Up/Down] Move | [PgUp/PgDn] Page | [Right] Open | [Left] Up | [Tab] Metadata | [/] Search | [c] Copy name | [Ctrl+C] Copy path | [r] Rescan | [w] Wipe | [F1] About | [q] Quit",
+        Focus::Meta => "[Up/Down] Move | [PgUp/PgDn] Page | [Right] Drill | [Left] Back | [Enter] Open/Edit | [e] Edit JSON | [n] New | [d] Delete | [c] Copy value | [Ctrl+C] Copy path | [Tab] Files | [/] Search | [w] Wipe | [F1] About | [q] Quit",
     }
 }
 
@@ -78,6 +88,7 @@ fn render_files(app: &mut App, frame: &mut Frame, area: Rect) {
     let block = panel_block("Files".to_string(), focused);
     let inner = block.inner(area);
     frame.render_widget(block, area);
+    app.file_view_height = inner.height as usize;
     if inner.width == 0 || inner.height == 0 {
         return;
     }
@@ -133,6 +144,7 @@ fn render_meta(app: &mut App, frame: &mut Frame, area: Rect) {
     let block = panel_block(left_truncate(&breadcrumb, area.width as usize), focused);
     let inner = block.inner(area);
     frame.render_widget(block, area);
+    app.meta_view_height = inner.height as usize;
     if inner.width == 0 || inner.height == 0 {
         return;
     }

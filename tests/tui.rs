@@ -39,7 +39,11 @@ fn tui_rejects_missing_path() {
 fn tui_without_tty_fails_cleanly() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::copy(fixture("photo.png"), dir.path().join("a.png")).unwrap();
-    // Piped stdio means raw mode fails: exit 1 with a message, never a hang.
+    // Piped stdio is not a terminal: exit 1 with a message, never a hang.
+    // The timeout is load-bearing, not a backstop: raw mode alone cannot
+    // detect this (crossterm enables it via /dev/tty, which exists under
+    // `cargo test` in any real terminal), so without an explicit stdio gate
+    // the TUI starts drawing into the pipe and this test hangs instead.
     run_ime().arg("--tui").arg(dir.path()).timeout(Duration::from_secs(10)).assert().failure().code(1).stderr(predicate::str::contains("cannot start TUI"));
     run_ime().arg("-t").arg(dir.path().join("a.png")).timeout(Duration::from_secs(10)).assert().failure().code(1).stderr(predicate::str::contains("cannot start TUI"));
     // A bare launch is also TUI mode, so it fails the same way headless.

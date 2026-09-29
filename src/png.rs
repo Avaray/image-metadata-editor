@@ -61,36 +61,140 @@ pub fn encode(chunks: &[Chunk]) -> Vec<u8> {
     out
 }
 
-/// Payload of the first `tEXt` chunk with the given Latin-1 keyword, if any.
-pub fn find_text<'a>(chunks: &'a [Chunk], keyword: &str) -> Option<&'a [u8]> {
-    chunks.iter().filter(|chunk| chunk.kind == *b"tEXt").filter_map(|chunk| text_payload(&chunk.data, keyword)).next()
+/// One decoded PNG text chunk: its keyword exactly as stored, plus its text.
+pub struct TextChunk {
+    pub keyword: String,
+    pub text: String,
 }
 
-fn text_payload<'a>(data: &'a [u8], keyword: &str) -> Option<&'a [u8]> {
+/// Enumerate every `tEXt`/`zTXt`/`iTXt` chunk except the raw-profile EXIF
+/// carriers (those surface under `exif`, never under `custom`). Undecodable
+/// chunks are skipped, not errors: one bad comment must not hide the rest.
+pub fn text_chunks(chunks: &[Chunk]) -> Vec<TextChunk> {
+    let mut out = Vec::new();
+    for chunk in chunks {
+        let decoded = match &chunk.kind {
+            b"tEXt" => decode_texte(&chunk.data),
+            b"zTXt" => decode_ztxt(&chunk.data),
+            b"iTXt" => decode_itxt(&chunk.data),
+            _ => None,
+        };
+        if let Some((keyword, text)) = decoded
+            && keyword != RAW_PROFILE_EXIF
+            && keyword != RAW_PROFILE_APP1
+        {
+            out.push(TextChunk { keyword, text });
+        }
+    }
+    out
+}
+
+/// Split a text chunk into its keyword bytes and the remainder. Keywords are
+/// 1-79 bytes per the PNG spec; anything else is malformed.
+fn split_keyword(data: &[u8]) -> Option<(&[u8], &[u8])> {
     let nul = data.iter().position(|&b| b == 0)?;
-    if data[..nul] == *keyword.as_bytes() { Some(&data[nul + 1..]) } else { None }
+    if nul == 0 || nul > 79 {
+        return None;
+    }
+    Some((&data[..nul], &data[nul + 1..]))
 }
 
-/// Insert or replace a `tEXt` chunk, placed right before `IEND`. All other
-/// chunks are preserved byte-for-byte.
-pub fn upsert_text(bytes: &[u8], keyword: &str, text: &[u8]) -> Result<Vec<u8>, Error> {
+/// Decode a Latin-1 byte string (`tEXt`/`zTXt` keywords and text) with a
+/// byte-to-char mapping, not lossy UTF-8.
+fn latin1(bytes: &[u8]) -> String {
+    bytes.iter().map(|&b| b as char).collect()
+}
+
+/// Decode a keyword: UTF-8 when valid (what `iTXt` writers produce in
+/// practice), otherwise Latin-1.
+fn decode_keyword(bytes: &[u8]) -> String {
+    std::str::from_utf8(bytes).map(str::to_string).unwrap_or_else(|_| latin1(bytes))
+}
+
+fn decode_texte(data: &[u8]) -> Option<(String, String)> {
+    let (keyword, text) = split_keyword(data)?;
+    Some((decode_keyword(keyword), latin1(text)))
+}
+
+fn decode_ztxt(data: &[u8]) -> Option<(String, String)> {
+    let (keyword, rest) = split_keyword(data)?;
+    if rest.first() != Some(&0) {
+        return None;
+    }
+    let inflated = miniz_oxide::inflate::decompress_to_vec_zlib(&rest[1..]).ok()?;
+    Some((decode_keyword(keyword), latin1(&inflated)))
+}
+
+fn decode_itxt(data: &[u8]) -> Option<(String, String)> {
+    let (keyword, rest) = split_keyword(data)?;
+    if rest.len() < 2 || rest[0] > 1 || rest[1] != 0 {
+        return None;
+    }
+    let mut parts = rest[2..].splitn(3, |&b| b == 0);
+    parts.next()?;
+    parts.next()?;
+    let text = parts.next()?;
+    let raw = if rest[0] == 1 { miniz_oxide::inflate::decompress_to_vec_zlib(text).ok()? } else { text.to_vec() };
+    Some((decode_keyword(keyword), String::from_utf8_lossy(&raw).into_owned()))
+}
+
+/// Rewrite the text-chunk set: drop every `tEXt`/`zTXt`/`iTXt` chunk except
+/// the raw-profile EXIF carriers, then store each desired entry as `iTXt`
+/// (UTF-8, uncompressed), sorted by keyword for deterministic output.
+pub fn set_text_chunks(bytes: &[u8], desired: &[(String, String)]) -> Result<Vec<u8>, Error> {
+    for (keyword, _) in desired {
+        validate_keyword(keyword)?;
+    }
     let mut chunks = parse(bytes)?;
-    chunks.retain(|chunk| !(chunk.kind == *b"tEXt" && text_payload(&chunk.data, keyword).is_some()));
-    let mut data = Vec::with_capacity(keyword.len() + 1 + text.len());
+    chunks.retain(|chunk| !is_custom_text(chunk));
+    let mut sorted: Vec<&(String, String)> = desired.iter().collect();
+    sorted.sort_by(|a, b| a.0.cmp(&b.0));
+    let position = chunks.iter().position(|chunk| chunk.kind == *b"IEND").unwrap_or(chunks.len());
+    for (index, (keyword, text)) in sorted.iter().enumerate() {
+        chunks.insert(position + index, Chunk { kind: *b"iTXt", data: itxt_data(keyword, text) });
+    }
+    Ok(encode(&chunks))
+}
+
+/// A text chunk managed as custom storage: any `tEXt`/`zTXt`/`iTXt` chunk
+/// that is not a raw-profile EXIF carrier (malformed ones included — with no
+/// keyword they cannot be represented, so a rewrite drops them).
+fn is_custom_text(chunk: &Chunk) -> bool {
+    match &chunk.kind {
+        b"tEXt" | b"zTXt" | b"iTXt" => match split_keyword(&chunk.data) {
+            Some((keyword, _)) => {
+                let keyword = decode_keyword(keyword);
+                keyword != RAW_PROFILE_EXIF && keyword != RAW_PROFILE_APP1
+            }
+            None => true,
+        },
+        _ => false,
+    }
+}
+
+fn itxt_data(keyword: &str, text: &str) -> Vec<u8> {
+    let mut data = Vec::with_capacity(keyword.len() + 5 + text.len());
     data.extend_from_slice(keyword.as_bytes());
     data.push(0);
-    data.extend_from_slice(text);
-    let position = chunks.iter().position(|chunk| chunk.kind == *b"IEND").unwrap_or(chunks.len());
-    chunks.insert(position, Chunk { kind: *b"tEXt", data });
-    Ok(encode(&chunks))
+    data.push(0);
+    data.push(0);
+    data.push(0);
+    data.push(0);
+    data.extend_from_slice(text.as_bytes());
+    data
 }
 
-/// Remove every `tEXt` chunk with the given keyword. All other chunks are
-/// preserved byte-for-byte.
-pub fn remove_text(bytes: &[u8], keyword: &str) -> Result<Vec<u8>, Error> {
-    let mut chunks = parse(bytes)?;
-    chunks.retain(|chunk| !(chunk.kind == *b"tEXt" && text_payload(&chunk.data, keyword).is_some()));
-    Ok(encode(&chunks))
+fn validate_keyword(keyword: &str) -> Result<(), Error> {
+    if keyword.is_empty() || keyword.len() > 79 {
+        return Err(Error::runtime(format!("invalid PNG text keyword '{keyword}': must be 1-79 bytes")));
+    }
+    if keyword.as_bytes().contains(&0) {
+        return Err(Error::runtime("invalid PNG text keyword: must not contain NUL bytes"));
+    }
+    if keyword == RAW_PROFILE_EXIF || keyword == RAW_PROFILE_APP1 {
+        return Err(Error::runtime(format!("PNG text keyword '{keyword}' is reserved for EXIF data")));
+    }
+    Ok(())
 }
 
 /// Extract the raw EXIF (TIFF) payload: the `eXIf` chunk, or a legacy
