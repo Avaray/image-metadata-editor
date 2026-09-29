@@ -7,6 +7,9 @@ mod jpeg;
 mod merge;
 mod meta;
 mod png;
+mod tui;
+mod tui_tree;
+mod tui_ui;
 mod webp;
 mod write;
 
@@ -46,6 +49,9 @@ fn run() -> Result<(), Error> {
     let mut output: Option<String> = None;
     let mut dry_run = false;
     let mut recursive = false;
+    let mut tui = false;
+    let mut power = false;
+    let mut watch = false;
     let mut parser = lexopt::Parser::from_env();
     while let Some(arg) = parser.next().map_err(|err| Error::usage(err.to_string()))? {
         match arg {
@@ -68,6 +74,9 @@ fn run() -> Result<(), Error> {
             }
             lexopt::Arg::Long("dry-run") => dry_run = true,
             lexopt::Arg::Short('r') | lexopt::Arg::Long("recursive") => recursive = true,
+            lexopt::Arg::Short('t') | lexopt::Arg::Long("tui") => tui = true,
+            lexopt::Arg::Short('p') | lexopt::Arg::Long("power") => power = true,
+            lexopt::Arg::Long("watch") => watch = true,
             lexopt::Arg::Value(path) => {
                 if file.is_some() {
                     return Err(Error::usage("expected a single <file> argument"));
@@ -98,12 +107,30 @@ fn run() -> Result<(), Error> {
     if sets.iter().filter(|set| set.as_str() == "-").count() > 1 {
         return Err(Error::usage("at most one --set - may appear per invocation"));
     }
+    if tui && (writing || output.is_some() || dry_run || recursive) {
+        return Err(Error::usage("--tui cannot be combined with --set, --wipe, --dry-run, --output, or --recursive"));
+    }
     let Some(file) = file else {
         if writing || output.is_some() || dry_run || recursive {
             return Err(Error::usage("missing <file> argument"));
         }
-        return Err(Error::runtime("no file given: interactive TUI mode is not implemented yet"));
+        // Bare launch (optionally with --tui/--power/--watch): TUI in the
+        // current directory.
+        let cwd = std::env::current_dir().map_err(|err| Error::runtime(format!("cannot open current directory: {err}")))?;
+        return tui::run(&cwd, power, watch);
     };
+    if tui {
+        if file == "-" {
+            return Err(Error::usage("--tui cannot be used with <file> - (stdin)"));
+        }
+        return tui::run(std::path::Path::new(&file), power, watch);
+    }
+    if watch {
+        return Err(Error::usage("--watch requires TUI mode (--tui or no arguments)"));
+    }
+    if power {
+        return Err(Error::usage("--power requires TUI mode (--tui or no arguments)"));
+    }
     if file == "-" && recursive {
         return Err(Error::usage("--recursive cannot be used with <file> - (stdin)"));
     }
@@ -373,7 +400,7 @@ fn read_input(file: &str) -> Result<Vec<u8>, Error> {
 
 fn print_help() -> Result<(), Error> {
     let text = format!(
-        "ime {} — read, write, and wipe metadata in PNG, JPEG, and WebP files.\n\nUsage:\n  ime <file>                          Print all metadata as JSON to stdout (use - for stdin)\n  ime <dir> [--recursive]             Print {{\"<path>\": <metadata>}} for every image in the directory\n  ime <file|dir> --set <JSON>         Merge a JSON object into the metadata (repeatable)\n  ime <file|dir> --wipe               Remove all metadata\n  ime <file|dir> --set <JSON> --dry-run  Print the would-be result without writing anything\n  ime <file> --set <JSON> -o <path>   Write the result to <path> instead (use - for stdout)\n  ime --help                          Print this help and exit\n  ime --version                       Print the version number and exit\n\n<JSON> is inline JSON5, - (read the payload from stdin), or @<path> (read it from a file).\n--set and --wipe are mutually exclusive; --output works on a single file only.\nWith stdin input and no --output, write results go to stdout.\n",
+        "ime {} — read, write, and wipe metadata in PNG, JPEG, and WebP files.\n\nUsage:\n  ime <file>                          Print all metadata as JSON to stdout (use - for stdin)\n  ime <dir> [--recursive]             Print {{\"<path>\": <metadata>}} for every image in the directory\n  ime <file|dir> --set <JSON>         Merge a JSON object into the metadata (repeatable)\n  ime <file|dir> --wipe               Remove all metadata\n  ime <file|dir> --set <JSON> --dry-run  Print the would-be result without writing anything\n  ime <file> --set <JSON> -o <path>   Write the result to <path> instead (use - for stdout)\n  ime [--tui] [<path>]                Open the interactive TUI (default directory: current)\n  ime --help                          Print this help and exit\n  ime --version                       Print the version number and exit\n\n<JSON> is inline JSON5, - (read the payload from stdin), or @<path> (read it from a file).\n--set and --wipe are mutually exclusive; --output works on a single file only.\nWith stdin input and no --output, write results go to stdout.\n--power skips TUI confirmations; --watch live-refreshes the TUI file list.\n",
         env!("CARGO_PKG_VERSION")
     );
     write::write_stdout(text.as_bytes())

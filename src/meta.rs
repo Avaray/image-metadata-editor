@@ -57,6 +57,17 @@ impl Metadata {
 /// section comes from the format-specific carrier (PNG `tEXt` chunk, or the
 /// EXIF `UserComment` tag on JPEG/WebP).
 pub fn read_metadata(bytes: &[u8], format: ImageFormat) -> Result<Metadata, Error> {
+    read_metadata_impl(bytes, format, true)
+}
+
+/// Same as [`read_metadata`], but skips smart-JSON traversal: string values
+/// stay exactly as stored on disk. The TUI edits against this stored form so
+/// embedded JSON documents keep their shape across writes.
+pub fn read_metadata_raw(bytes: &[u8], format: ImageFormat) -> Result<Metadata, Error> {
+    read_metadata_impl(bytes, format, false)
+}
+
+fn read_metadata_impl(bytes: &[u8], format: ImageFormat, traverse_output: bool) -> Result<Metadata, Error> {
     let mut exif = Map::new();
     let mut codes = std::collections::HashMap::new();
     let mut user_comment: Option<Vec<u8>> = None;
@@ -110,18 +121,19 @@ pub fn read_metadata(bytes: &[u8], format: ImageFormat) -> Result<Metadata, Erro
         }
     }
 
-    let custom = match format {
+    let mut custom = match format {
         ImageFormat::Png => read_png_custom(chunks.as_deref().unwrap_or(&[])),
         ImageFormat::Jpeg | ImageFormat::Webp => user_comment.as_deref().and_then(decode_user_comment),
     };
 
-    for value in exif.values_mut() {
-        traverse(value);
-    }
-    let mut custom = custom;
-    if let Some(map) = custom.as_mut() {
-        for value in map.values_mut() {
+    if traverse_output {
+        for value in exif.values_mut() {
             traverse(value);
+        }
+        if let Some(map) = custom.as_mut() {
+            for value in map.values_mut() {
+                traverse(value);
+            }
         }
     }
 
@@ -214,6 +226,10 @@ fn decode_custom_json(json_bytes: &[u8]) -> Option<Map<String, Value>> {
 /// Smart JSON traversal (`03-business-logic.md`, output-only): any string
 /// value holding a JSON object or array is embedded as nested JSON, applied
 /// recursively. Strings holding JSON scalars stay strings.
+pub fn traverse_value(value: &mut Value) {
+    traverse(value);
+}
+
 fn traverse(value: &mut Value) {
     match value {
         Value::String(text) => {
