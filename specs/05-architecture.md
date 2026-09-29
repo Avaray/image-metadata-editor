@@ -26,6 +26,9 @@
 - `ratatui` — terminal UI framework.
 - `crossterm` — terminal backend.
 - `arboard` (`default-features = false`) — clipboard integration. Default features pull in the `image` crate for clipboard image support, which is never needed since the TUI only ever copies text (a JSON value, a key path, a file path).
+- `tui-input` (`default-features = false`, `features = ["ratatui-crossterm"]`) — single-line, cursor-editable text input, including built-in word-boundary movement (`GoToPrevWord`/`GoToNextWord`), used for every inline text field: the leaf value editor, the search prompt, and the `n` key/value prompts. Pinned versions matter here: `tui-input` 0.15's `ratatui-crossterm` feature requires `ratatui ^0.30.2`/`crossterm ^0.29.0`, exactly what's already pinned above — verified to resolve to one shared `ratatui`/`crossterm` each, no duplication.
+  - **Not `tui-textarea`**: its latest release (0.7.0) pins `ratatui ^0.29.0`, incompatible with our `ratatui 0.30` — Cargo would have to compile two different `ratatui` versions side by side, and `tui-textarea`'s widget wouldn't type-check against our 0.30-based `Frame`/`Buffer` anyway. The `e` key's multi-line raw-JSON subtree editor should be built as a thin multi-line wrapper composed of several `tui-input` lines instead of pulling in a second, conflicting text-widget crate — this also keeps every text field in the app using one consistent editing primitive.
+- `notify` — cross-platform filesystem watching for `--watch` (inotify on Linux, FSEvents on macOS, `ReadDirectoryChangesW` on Windows). Its `RecommendedWatcher` cleans itself up on `Drop`; the "at most one watch, never outliving the process" guarantee in `04-tui-spec.md` depends on the `Watcher` value's lifetime being tied directly to "the directory currently being displayed" — don't route its events through a detached thread or channel that could outlive the `Watcher` itself.
 
 **Dev dependencies (see `07-testing-strategy.md`)**
 - `assert_cmd`, `predicates`, `tempfile`.
@@ -47,6 +50,14 @@ None of the chosen crates decode or re-encode pixel data. Every metadata operati
 - Use a single top-level error type (e.g. via `thiserror`, or a hand-written enum) that every fallible path converts into. Do not `panic!`/`unwrap()` on user-controlled input (file contents, `--set` JSON, CLI arguments).
 - The error type must distinguish **usage errors** (bad flags/arguments — exit `2`) from **runtime errors** (bad file, bad data, I/O failure — exit `1`); see `02-cli-interface.md`.
 - Error messages go to stderr; stdout is reserved for the JSON output of successful reads.
+
+## Cross-platform rendering (Windows Terminal, WSL2 included)
+
+- Enter the alternate screen buffer (`EnterAlternateScreen`/`LeaveAlternateScreen`) and enable raw mode for the whole TUI session. Never let raw `println!`/`print!`/`eprintln!` output reach the terminal while the TUI is active, including from a panic — install a panic hook that restores the terminal (disable raw mode, leave the alternate screen) *before* printing anything, so a panic mid-render can't leave stray output sitting in the user's normal scrollback.
+- Never rely on the terminal's own automatic line-wrapping: lay out and truncate/wrap all text within `ratatui`'s cell grid yourself (its default behavior when used as intended), rather than writing a line longer than the reported terminal width and letting the terminal wrap it.
+- This specifically matters because of a currently-open ConPTY bug ([microsoft/terminal#16603](https://github.com/microsoft/terminal/issues/16603)) where line-wrapping under ConPTY — which is what WSL2 renders through, via Windows Terminal — can insert spurious blank lines into scrollback once a window narrower than the content triggers a wrap. The mitigation above (never depend on terminal-side wrapping) sidesteps this rather than working around ConPTY itself, which this project has no control over.
+- Re-query terminal size on every `crossterm` resize event rather than caching it once at startup.
+- This class of bug is terminal-emulator-specific and isn't caught by `ratatui`'s headless `TestBackend`; see `07-testing-strategy.md` for the manual verification it needs instead.
 
 ## Write safety
 

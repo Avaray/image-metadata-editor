@@ -5,12 +5,20 @@ const path = require("path");
 const os = require("os");
 const fs = require("fs");
 
-const platform = os.platform();
-const arch = os.arch();
-const packageName = `@avaray/ime-${platform}-${arch}`;
-const binName = platform === "win32" ? "ime.exe" : "ime";
+// Node's os.platform()/os.arch() strings don't match the npm package naming
+// scheme 1:1 (e.g. "darwin" vs "macos", "arm" vs "armv7") — map explicitly
+// rather than interpolating the raw values.
+const PLATFORM_MAP = { darwin: "macos", linux: "linux", win32: "win32" };
+const ARCH_MAP = { x64: "x64", arm64: "arm64", arm: "armv7" };
+
+const platform = PLATFORM_MAP[os.platform()];
+const arch = ARCH_MAP[os.arch()];
+const packageName = platform && arch ? `@avaray/ime-${platform}-${arch}` : null;
+const binName = os.platform() === "win32" ? "ime.exe" : "ime";
 
 function findBinary() {
+  if (!packageName) return null;
+
   // Strategy 1: resolve via the optional dependency's package.json
   try {
     const pkgJsonPath = require.resolve(`${packageName}/package.json`);
@@ -33,12 +41,13 @@ function findBinary() {
 
 const exePath = findBinary();
 if (!exePath) {
-  console.error(
-    `Unsupported platform or missing binary package: ${packageName}`
-  );
-  console.error("Please ensure the optional dependency was installed:");
-  console.error(`  npm install ${packageName}`);
-  console.error(`  bun add ${packageName}`);
+  const label = packageName ?? `${os.platform()}/${os.arch()} (unsupported)`;
+  console.error(`Unsupported platform or missing binary package: ${label}`);
+  if (packageName) {
+    console.error("Please ensure the optional dependency was installed:");
+    console.error(`  npm install ${packageName}`);
+    console.error(`  bun add ${packageName}`);
+  }
   process.exit(1);
 }
 

@@ -14,6 +14,7 @@
 - `--recursive` / `-r`: Recursively processes subdirectories when a directory is provided. Follows symbolic links by default; a symlink loop is reported as a per-file error, not a hang (see `03-business-logic.md`). `--output` (a single destination, including its `-`/stdout form) and `<file> = -` are both inherently single-file, so neither is compatible with `--recursive`. `--set -` and `--set @<path>` work fine with `--recursive`: the same payload is merged into every matched file.
 - `--tui` / `-t`: Opens the Interactive Terminal UI (TUI) for the given path.
 - `--power` / `-p`: TUI power mode; skips confirmations and auto-saves on quit.
+- `--watch`: TUI-only; live-updates the file tree as files change in the currently displayed directory. No short flag (`-w` is already `--wipe`). Meaningless outside TUI mode; ignored (or a usage error — pick one and be consistent) if given without `--tui`/`-t` or the argument-less default TUI launch. See `04-tui-spec.md` for exact behavior and safety guarantees.
 - `--version` / `-v`: Prints the semver version number and exits.
 - `--help` / `-h`: Prints help and exits.
 

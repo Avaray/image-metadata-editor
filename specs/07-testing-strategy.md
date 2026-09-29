@@ -18,3 +18,7 @@ Minimum required coverage:
 10. **`--dry-run`** — with `--set`/`--wipe`, prints the would-be resulting metadata to stdout and leaves the file completely unmodified (compare the file's bytes before and after).
 11. **Batch/`--recursive`** — reading a directory prints the aggregated `{path: metadata}` object; a single bad file inside the batch is reported on stderr and doesn't stop the rest of the batch, the overall exit code is `1` if any file failed; a symlink cycle in the tree is reported as a per-file error rather than hanging the process.
 12. **Exit code matrix** — spot-check that success is always `0`, runtime errors are always `1`, and usage errors (bad flags, `--output` with `--recursive`, double stdin) are always `2`.
+
+## Manual verification (not automatable in `tests/`)
+
+The TUI's cross-platform rendering requirement (`04-tui-spec.md`, `05-architecture.md`) depends on real terminal-emulator behavior that `ratatui`'s headless `TestBackend` can't exercise. Before a release, manually confirm no stray blank lines or unexpected scrollback growth on: Windows Terminal (native), a native Linux terminal, macOS Terminal/iTerm2, and WSL2 running under Windows Terminal (including a narrow window, where the underlying ConPTY bug this guards against actually triggers).

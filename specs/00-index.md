@@ -8,7 +8,8 @@ This is the entry point for the `ime` (Image Metadata Editor) spec set. Read the
 4. `05-architecture.md` — toolchain, dependencies (`Cargo.toml` is the source of truth for exact versions), error handling, write safety.
 5. `06-data-schemas.md` — the JSON shape read and written, storage encoding per format, edge cases.
 6. `07-testing-strategy.md` — what `tests/` must cover.
-7. `04-tui-spec.md` — interactive mode. Deliberately left thin for now; do not expand without new instructions.
+7. `08-release-and-distribution.md` — the CI build matrix, versioning, and npm/crates.io publishing this project already has.
+8. `04-tui-spec.md` — interactive mode: keybindings, panels, watch mode, cross-platform rendering.
 
 ## Conventions
 
@@ -27,6 +28,8 @@ This is the entry point for the `ime` (Image Metadata Editor) spec set. Read the
 | **magic bytes** | The file signature used to identify PNG/JPEG/WebP, independent of file extension. |
 | **in-place** | Writing the result back to the original file path (the default, unless `-o/--output` is given). |
 
-## Deferred
+## Open questions (not yet decided — see `04-tui-spec.md`)
 
-- Any TUI keybindings, panel focus flow, or confirmation UX — `04-tui-spec.md` is intentionally incomplete.
+- Cycling through multiple search matches (next/previous) — only "jump to first match" is currently defined.
+- Whether the wipe/delete confirmation's "Cancel" was meant to behave differently from "No" (currently spec'd as equivalent).
+- The save-on-quit behavior without `--power` is inferred from the CLI spec's "auto-saves on quit" wording, not explicitly given — confirm it matches intent.
