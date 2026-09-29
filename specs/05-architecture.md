@@ -51,6 +51,14 @@ None of the chosen crates decode or re-encode pixel data. Every metadata operati
 - The error type must distinguish **usage errors** (bad flags/arguments — exit `2`) from **runtime errors** (bad file, bad data, I/O failure — exit `1`); see `02-cli-interface.md`.
 - Error messages go to stderr; stdout is reserved for the JSON output of successful reads.
 
+## Background loading, without an async runtime
+
+Directory scans and per-file metadata loads (`04-tui-spec.md`'s "Loading states") each run on a plain `std::thread::spawn` worker that sends its one result back over a `std::sync::mpsc::channel`; the main thread polls that channel non-blockingly on each render iteration. This deliberately doesn't pull in an async runtime (`tokio` or similar) — it would be a heavy, single-purpose dependency for something `std::thread` + `std::sync::mpsc` already covers, and it stays consistent with `nom-exif` already being built with its optional async backend disabled, since the rest of the tool is synchronous by design.
+
+- **Staleness, not cancellation.** A spawned worker is never force-killed. Each request is tagged with what it's for (the target directory path, or the file path being previewed); when a result arrives, the main thread applies it only if that tag still matches what the user is currently looking at, and discards it otherwise. An abandoned scan (e.g. after the user presses Esc to stop waiting on a slow network-mounted directory) is left to finish naturally; it's a short-lived, self-terminating thread that exits the moment it sends its one result, not a persistent process — a different, simpler concern than the `notify::Watcher` lifecycle in watch mode, which does need active teardown.
+- **Animating the spinner without new input.** The main event loop uses `crossterm::event::poll(Duration)` with a short timeout (e.g. ~100ms) instead of blocking indefinitely on `read()`; a poll timeout with no event is treated as a tick that can advance the spinner frame and trigger a redraw, so the spinner keeps animating even while the user isn't pressing anything.
+- Optionally, debounce metadata-preview loads by a few tens of milliseconds so holding Up/Down doesn't spawn a worker thread for every file flown past while key-repeat is active — a minor refinement, not a correctness requirement, since staleness-discarding already makes the unoptimized version correct either way.
+
 ## Cross-platform rendering (Windows Terminal, WSL2 included)
 
 - Enter the alternate screen buffer (`EnterAlternateScreen`/`LeaveAlternateScreen`) and enable raw mode for the whole TUI session. Never let raw `println!`/`print!`/`eprintln!` output reach the terminal while the TUI is active, including from a panic — install a panic hook that restores the terminal (disable raw mode, leave the alternate screen) *before* printing anything, so a panic mid-render can't leave stray output sitting in the user's normal scrollback.

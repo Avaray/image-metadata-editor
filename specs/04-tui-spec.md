@@ -69,6 +69,17 @@ Every inline text input (the leaf value editor, the `e` subtree editor, the sear
 - On WSL2, watching a Windows-mounted path (anything under `/mnt/*` via DrvFs) is known to be unreliable for changes made from the Windows side — a long-standing WSL/DrvFs limitation this app cannot fix. Changes made from inside WSL itself, and watching native WSL2 filesystem paths (e.g. under `/home/...`), work reliably. This must degrade gracefully (silently fall back on the user's manual `r`), never hang or error out.
 - See `05-architecture.md` for how this is kept leak-free.
 
+## Loading states
+
+Reading a directory (a magic-byte scan over potentially thousands of files) or loading a file's metadata can take longer than the UI should ever block for. Both run off the main thread, so the render loop stays responsive throughout. Two different navigation actions trigger this, and they're handled differently:
+
+- **Changing directory (Left/Right in the file tree)** — while the scan for the target directory is in flight, further Left/Right presses in the file tree are ignored: there's nothing to navigate to yet, and letting them through risks a second (or third) directory scan starting before the first one even finishes. Up/Down, Tab, and the other global keys stay responsive throughout. **Esc** gives up waiting on an in-flight scan and unblocks navigation immediately; the abandoned scan is left to finish on its own in the background rather than force-killed, and its result is simply discarded when it arrives (see `05-architecture.md`).
+- **Metadata preview (Up/Down moving the file-tree cursor onto a different file)** — not blocked. Moving the cursor immediately starts loading the newly selected file's metadata; any still-in-flight load for the previous selection becomes irrelevant, and only the result for whichever file is currently selected when it arrives is ever shown.
+- In both cases, a result is only applied to the UI if it's still what the user is currently looking at — a stale result (superseded by newer navigation before it arrived) is silently discarded rather than applied. This is what makes rapid navigation safe even while an earlier request is still resolving.
+- If a load takes longer than **1 second**, show a loading indicator in place of the panel's content — a simple ASCII spinner cycling `| / - \`, not a Unicode glyph, for the same cross-platform-rendering reasons as above. Nothing is shown for loads that resolve within that first second, so the common case never flickers.
+
+See `05-architecture.md` for how this is implemented.
+
 ## Performance
 
 Both panels must stay responsive on directories with thousands of files and metadata trees with hundreds of nested nodes. This is a hard requirement, not an optimization: see the rendering and scanning rules under each panel above, and `05-architecture.md`.
