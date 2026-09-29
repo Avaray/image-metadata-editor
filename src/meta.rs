@@ -17,10 +17,23 @@ const USER_COMMENT_CODE: u16 = 0x9286;
 /// Character-code prefix of a `UserComment` payload holding JSON (`06-data-schemas.md`).
 const USER_COMMENT_ASCII_PREFIX: &[u8] = b"ASCII\0\0\0";
 
+/// Structural pointer tags, hidden from reads: sub-IFD offsets plus the
+/// strip/thumbnail layout tags. Their values are encoder-managed byte offsets
+/// that shift on every rewrite (positional noise, not image metadata), and
+/// the encoder re-adds them whenever their IFD exists — so a cleared section
+/// could never read back empty while they stay visible.
+const HIDDEN_OFFSETS: [(u16, ExifTagGroup); 3] = [(0x8769, ExifTagGroup::GENERIC), (0x8825, ExifTagGroup::GENERIC), (0xA005, ExifTagGroup::EXIF)];
+const HIDDEN_LAYOUT: [u16; 4] = [0x0111, 0x0117, 0x0201, 0x0202];
+
 /// Metadata read from a single image file: standard EXIF tags plus custom keys.
+/// `codes` maps every exposed tag name back to its `(code, group)` identity
+/// for `--set` deletes; `has_exif` records whether an EXIF segment was found
+/// at all (even one with no recognized tags).
 pub struct Metadata {
     pub exif: Map<String, Value>,
     pub custom: Option<Map<String, Value>>,
+    pub codes: std::collections::HashMap<String, (u16, ExifTagGroup)>,
+    pub has_exif: bool,
 }
 
 impl Metadata {
@@ -45,9 +58,23 @@ impl Metadata {
 /// EXIF `UserComment` tag on JPEG/WebP).
 pub fn read_metadata(bytes: &[u8], format: ImageFormat) -> Result<Metadata, Error> {
     let mut exif = Map::new();
+    let mut codes = std::collections::HashMap::new();
     let mut user_comment: Option<Vec<u8>> = None;
 
-    if let Some(parsed) = parse_exif(bytes)? {
+    // PNG EXIF is extracted at the chunk level first (`eXIf` or an
+    // ImageMagick raw-profile `tEXt`/`zTXt` chunk — the latter is where
+    // `little_exif` writes, and `nom-exif` cannot see it), then parsed as
+    // TIFF. Other formats go to `nom-exif` directly.
+    let chunks = if format == ImageFormat::Png { Some(png::parse(bytes)?) } else { None };
+    let tiff_payload = chunks.as_deref().and_then(png::exif_payload);
+    let parsed = match (&chunks, tiff_payload) {
+        (Some(_), Some(tiff)) => parse_exif(&tiff)?,
+        (Some(_), None) => None,
+        (None, _) => parse_exif(bytes)?,
+    };
+    let has_exif = parsed.is_some();
+
+    if let Some(parsed) = parsed {
         for entry in parsed.entries() {
             if entry.ifd() == IfdIndex::THUMBNAIL {
                 continue;
@@ -60,6 +87,9 @@ pub fn read_metadata(bytes: &[u8], format: ImageFormat) -> Result<Metadata, Erro
                 _ => continue,
             };
             let code = entry.tag().code();
+            if HIDDEN_OFFSETS.contains(&(code, group)) || HIDDEN_LAYOUT.contains(&code) {
+                continue;
+            }
             if code == USER_COMMENT_CODE && group == ExifTagGroup::EXIF {
                 if format != ImageFormat::Png
                     && let EntryValue::Undefined(payload) = entry.value()
@@ -75,12 +105,13 @@ pub fn read_metadata(bytes: &[u8], format: ImageFormat) -> Result<Metadata, Erro
             if exif.contains_key(&name) {
                 continue;
             }
-            exif.insert(name, format_value(entry.value()));
+            exif.insert(name.clone(), format_value(entry.value()));
+            codes.insert(name, (code, group));
         }
     }
 
     let custom = match format {
-        ImageFormat::Png => read_png_custom(bytes)?,
+        ImageFormat::Png => read_png_custom(chunks.as_deref().unwrap_or(&[])),
         ImageFormat::Jpeg | ImageFormat::Webp => user_comment.as_deref().and_then(decode_user_comment),
     };
 
@@ -94,7 +125,7 @@ pub fn read_metadata(bytes: &[u8], format: ImageFormat) -> Result<Metadata, Erro
         }
     }
 
-    Ok(Metadata { exif, custom })
+    Ok(Metadata { exif, custom, codes, has_exif })
 }
 
 /// The canonical variant name of a `little_exif` tag (e.g. `Make`, `GPSLatitude`).
@@ -160,15 +191,10 @@ fn number_or_string(n: f64) -> Value {
 }
 
 /// Read the `custom` section from the PNG `tEXt` chunk: hex-encoded compact JSON.
-fn read_png_custom(bytes: &[u8]) -> Result<Option<Map<String, Value>>, Error> {
-    let Some(payload) = png::find_text_chunk(bytes, PNG_CUSTOM_KEYWORD)? else {
-        return Ok(None);
-    };
-    let hex_text = std::str::from_utf8(&payload).unwrap_or("");
-    match hex::decode(hex_text.trim()) {
-        Ok(json_bytes) => Ok(decode_custom_json(&json_bytes)),
-        Err(_) => Ok(None),
-    }
+fn read_png_custom(chunks: &[png::Chunk]) -> Option<Map<String, Value>> {
+    let payload = png::find_text(chunks, PNG_CUSTOM_KEYWORD)?;
+    let hex_text = std::str::from_utf8(payload).unwrap_or("");
+    hex::decode(hex_text.trim()).ok().and_then(|json_bytes| decode_custom_json(&json_bytes))
 }
 
 /// Read the `custom` section from a JPEG/WebP `UserComment` payload: compact

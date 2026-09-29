@@ -742,6 +742,7 @@ dependencies = [
  "json5",
  "lexopt",
  "little_exif",
+ "miniz_oxide",
  "nom-exif",
  "notify",
  "predicates",

@@ -27,15 +27,13 @@ fn expected_custom() -> Value {
     serde_json::json!({"nested": {"a": [1, 2], "s": "x"}, "project": "stage1", "rating": 5})
 }
 
-fn expected_exif(gps_info_offset: u64) -> Value {
+fn expected_exif() -> Value {
     serde_json::json!({
         "Artist": "404",
         "Copyright": "CC0 test fixture",
         "DateTimeOriginal": "2026:09:01 12:34:56",
-        "ExifOffset": 252,
         "ExposureTime": "1/200",
         "FNumber": "28/10",
-        "GPSInfo": gps_info_offset,
         "GPSLatitude": ["52/1", "13/1", "0/1"],
         "GPSLatitudeRef": "N",
         "GPSLongitude": ["21/1", "0/1", "0/1"],
@@ -55,19 +53,19 @@ fn expected_exif(gps_info_offset: u64) -> Value {
 #[test]
 fn read_png_prints_exif_and_custom() {
     let value = stdout_json(run_read(&fixture("photo.png")));
-    assert_eq!(value, serde_json::json!({"exif": expected_exif(342), "custom": expected_custom()}));
+    assert_eq!(value, serde_json::json!({"exif": expected_exif(), "custom": expected_custom()}));
 }
 
 #[test]
 fn read_jpeg_prints_exif_and_custom() {
     let value = stdout_json(run_read(&fixture("photo.jpg")));
-    assert_eq!(value, serde_json::json!({"exif": expected_exif(422), "custom": expected_custom()}));
+    assert_eq!(value, serde_json::json!({"exif": expected_exif(), "custom": expected_custom()}));
 }
 
 #[test]
 fn read_webp_prints_exif_and_custom() {
     let value = stdout_json(run_read(&fixture("photo.webp")));
-    assert_eq!(value, serde_json::json!({"exif": expected_exif(422), "custom": expected_custom()}));
+    assert_eq!(value, serde_json::json!({"exif": expected_exif(), "custom": expected_custom()}));
 }
 
 #[test]
@@ -118,12 +116,23 @@ fn user_comment_never_appears_under_exif() {
 }
 
 #[test]
+fn structural_pointer_tags_are_hidden() {
+    for name in ["photo.png", "photo.jpg", "photo.webp"] {
+        let value = stdout_json(run_read(&fixture(name)));
+        let exif = value["exif"].as_object().unwrap();
+        for key in ["ExifOffset", "GPSInfo", "InteropOffset", "StripOffsets", "StripByteCounts", "ThumbnailOffset", "ThumbnailLength"] {
+            assert!(!exif.contains_key(key), "{name} must not expose structural tag {key}");
+        }
+    }
+}
+
+#[test]
 fn reads_image_from_stdin() {
     let bytes = std::fs::read(fixture("photo.jpg")).unwrap();
     let mut cmd = Command::cargo_bin("ime").unwrap();
     let assert = cmd.arg("-").write_stdin(bytes).assert();
     let value = stdout_json(assert);
-    assert_eq!(value, serde_json::json!({"exif": expected_exif(422), "custom": expected_custom()}));
+    assert_eq!(value, serde_json::json!({"exif": expected_exif(), "custom": expected_custom()}));
 }
 
 #[test]
