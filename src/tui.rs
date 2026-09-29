@@ -121,6 +121,10 @@ struct ScanResp {
     dir: PathBuf,
     entries: Vec<FileEntry>,
     error: Option<String>,
+    seq: u64,
+    /// Phase-two message: `entries` are *additional* images found by
+    /// magic-sniffing files without an image extension. Merge, don't replace.
+    extra: bool,
 }
 
 struct MetaResp {
@@ -141,6 +145,7 @@ pub(crate) struct App {
     pub file_cursor: usize,
     pub file_scroll: usize,
     pub pending_dir: Option<(PathBuf, Instant)>,
+    pub scan_seq: u64,
     pub dir_states: HashMap<PathBuf, usize>,
     pub initial_select: Option<String>,
     pub focus: Focus,
@@ -177,6 +182,7 @@ impl App {
             file_cursor: 0,
             file_scroll: 0,
             pending_dir: None,
+            scan_seq: 0,
             dir_states: HashMap::new(),
             initial_select: select,
             focus: Focus::Files,
@@ -211,10 +217,22 @@ impl App {
         if navigation {
             self.pending_dir = Some((dir.clone(), Instant::now()));
         }
+        self.scan_seq += 1;
+        let seq = self.scan_seq;
         let tx = self.scan_tx.clone();
         std::thread::spawn(move || {
-            let (entries, error) = scan_entries(&dir);
-            let _ = tx.send(ScanResp { dir, entries, error });
+            // Phase one lists directories and image extensions without
+            // touching file contents, so huge directories appear instantly.
+            // Phase two magic-sniffs the remaining files in the background
+            // and merges whatever turns out to be an image.
+            let (entries, candidates, error) = scan_entries_fast(&dir);
+            let _ = tx.send(ScanResp { dir: dir.clone(), entries, error: error.clone(), seq, extra: false });
+            if error.is_none() {
+                let found = sniff_candidates(&candidates);
+                if !found.is_empty() {
+                    let _ = tx.send(ScanResp { dir, entries: found, error: None, seq, extra: true });
+                }
+            }
         });
     }
 
@@ -231,7 +249,13 @@ impl App {
     /// what the user is looking at; stale results are silently discarded.
     fn pump_workers(&mut self) {
         while let Ok(resp) = self.scan_rx.try_recv() {
-            if self.pending_dir.as_ref().is_some_and(|(dir, _)| *dir == resp.dir) {
+            if resp.extra {
+                // Stale extras (a newer scan or refresh already ran) are
+                // silently discarded: only the current generation may merge.
+                if self.pending_dir.is_none() && resp.dir == self.dir && resp.seq == self.scan_seq {
+                    self.apply_extra(resp);
+                }
+            } else if self.pending_dir.as_ref().is_some_and(|(dir, _)| *dir == resp.dir) {
                 self.apply_navigation(resp);
             } else if self.pending_dir.is_none() && resp.dir == self.dir {
                 self.apply_refresh(resp);
@@ -288,6 +312,16 @@ impl App {
         let selected = self.entries.get(self.file_cursor).map(|entry| entry.name.clone());
         self.entries = resp.entries;
         self.scan_error = resp.error;
+        self.file_cursor = selected.and_then(|name| self.entries.iter().position(|entry| entry.name == name)).unwrap_or(0).min(self.entries.len().saturating_sub(1));
+        self.selection_changed();
+    }
+
+    /// Merge phase-two images into the visible list, keeping the cursor on
+    /// the same file (entries are only added, so the selection survives).
+    fn apply_extra(&mut self, resp: ScanResp) {
+        let selected = self.entries.get(self.file_cursor).map(|entry| entry.name.clone());
+        self.entries.extend(resp.entries);
+        sort_entries(&mut self.entries);
         self.file_cursor = selected.and_then(|name| self.entries.iter().position(|entry| entry.name == name)).unwrap_or(0).min(self.entries.len().saturating_sub(1));
         self.selection_changed();
     }
@@ -999,19 +1033,23 @@ fn is_drives(dir: &Path) -> bool {
     dir.as_os_str().is_empty()
 }
 
-/// Scan one directory: `..` (except at the root), subdirectories, and files
-/// detected as PNG/JPEG/WebP by magic bytes. Anything else is omitted.
-fn scan_entries(dir: &Path) -> (Vec<FileEntry>, Option<String>) {
+/// Phase one of the directory scan: `..` (except at the root),
+/// subdirectories, and files with an image extension. Reads names only — no
+/// `stat` and no file contents — so even huge directories list instantly.
+/// Everything else that is a regular file comes back as `candidates` for the
+/// phase-two magic sniff, which finds images under unusual names.
+fn scan_entries_fast(dir: &Path) -> (Vec<FileEntry>, Vec<PathBuf>, Option<String>) {
     if is_drives(dir) {
         #[cfg(windows)]
-        return (drives(), None);
+        return (drives(), Vec::new(), None);
         #[cfg(not(windows))]
-        return (Vec::new(), Some("cannot read directory".to_string()));
+        return (Vec::new(), Vec::new(), Some("cannot read directory".to_string()));
     }
     let mut entries = Vec::new();
+    let mut candidates = Vec::new();
     let read = match std::fs::read_dir(dir) {
         Ok(read) => read,
-        Err(err) => return (entries, Some(format!("cannot read directory: {err}"))),
+        Err(err) => return (entries, candidates, Some(format!("cannot read directory: {err}"))),
     };
     for item in read {
         let Ok(item) = item else {
@@ -1019,20 +1057,59 @@ fn scan_entries(dir: &Path) -> (Vec<FileEntry>, Option<String>) {
         };
         let path = item.path();
         let name = item.file_name().to_string_lossy().into_owned();
-        let Ok(kind) = std::fs::metadata(&path) else {
-            continue;
+        // `file_type` comes free with the directory entry; only symlinks
+        // need a resolving `stat`, and those are rare.
+        let is_dir = match item.file_type() {
+            Ok(kind) if kind.is_dir() => true,
+            Ok(kind) if kind.is_file() => false,
+            Ok(_) => match std::fs::metadata(&path) {
+                Ok(resolved) if resolved.is_dir() => true,
+                Ok(resolved) if resolved.is_file() => false,
+                _ => continue,
+            },
+            Err(_) => continue,
         };
-        if kind.is_dir() {
+        if is_dir {
             entries.push(FileEntry { name, path, is_dir: true, is_parent: false });
-        } else if kind.is_file() && is_image(&path) {
+        } else if has_image_extension(&name) {
             entries.push(FileEntry { name, path, is_dir: false, is_parent: false });
+        } else {
+            candidates.push(path);
         }
     }
-    entries.sort_by_key(|entry| (!entry.is_dir, entry.name.to_lowercase()));
+    sort_entries(&mut entries);
     if let Some(parent) = parent_dir(dir) {
         entries.insert(0, FileEntry { name: "..".to_string(), path: parent, is_dir: true, is_parent: true });
     }
-    (entries, None)
+    (entries, candidates, None)
+}
+
+/// Phase two of the directory scan: magic-sniff the files phase one could
+/// not classify by name. Runs in the background after the list is already
+/// visible, so its cost never blocks navigation.
+fn sniff_candidates(candidates: &[PathBuf]) -> Vec<FileEntry> {
+    let mut found = Vec::new();
+    for path in candidates {
+        if is_image(path) {
+            let name = path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
+            found.push(FileEntry { name, path: path.clone(), is_dir: false, is_parent: false });
+        }
+    }
+    found
+}
+
+/// Directories first, then names case-insensitively. Keys are computed once
+/// per entry: a naive `sort_by_key` would re-lowercase every name on each of
+/// its O(n log n) comparisons.
+fn sort_entries(entries: &mut [FileEntry]) {
+    entries.sort_by_cached_key(|entry| (!entry.is_dir, entry.name.to_lowercase()));
+}
+
+fn has_image_extension(name: &str) -> bool {
+    match Path::new(name).extension().and_then(|ext| ext.to_str()) {
+        Some(ext) => ext.eq_ignore_ascii_case("png") || ext.eq_ignore_ascii_case("jpg") || ext.eq_ignore_ascii_case("jpeg") || ext.eq_ignore_ascii_case("webp"),
+        None => false,
+    }
 }
 
 fn is_image(path: &Path) -> bool {
@@ -1058,4 +1135,74 @@ fn drives() -> Vec<FileEntry> {
         }
     }
     entries
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Phase one must classify by name alone: garbage bytes under an image
+    /// extension are still listed (the old magic-sniff-everything scan
+    /// omitted them — and paid a file open per entry for it).
+    #[test]
+    fn scan_fast_lists_by_extension_without_reading_content() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("sub")).unwrap();
+        for index in 0..300 {
+            std::fs::write(dir.path().join(format!("photo{index:03}.png")), b"definitely not image bytes").unwrap();
+        }
+        std::fs::write(dir.path().join("notes.txt"), b"sidecar").unwrap();
+
+        let (entries, candidates, error) = scan_entries_fast(dir.path());
+        assert!(error.is_none());
+        // `..`, one subdirectory, and all 300 extension matches.
+        assert_eq!(entries.len(), 302);
+        assert_eq!(entries[0].name, "..");
+        assert!(entries.iter().any(|entry| entry.name == "sub" && entry.is_dir));
+        assert_eq!(entries.iter().filter(|entry| !entry.is_dir && !entry.is_parent).count(), 300);
+        assert_eq!(candidates.len(), 1);
+        assert!(entries.iter().all(|entry| entry.name != "notes.txt"));
+    }
+
+    /// Phase two still finds real images hiding under unusual names, and
+    /// leaves actual non-images out.
+    #[test]
+    fn scan_sniff_finds_extensionless_images() {
+        let dir = tempfile::tempdir().unwrap();
+        let png = std::fs::read("tests/fixtures/photo.png").unwrap();
+        std::fs::write(dir.path().join("no-extension"), &png).unwrap();
+        std::fs::write(dir.path().join("not-an-image"), b"just text").unwrap();
+
+        let (entries, candidates, error) = scan_entries_fast(dir.path());
+        assert!(error.is_none());
+        assert_eq!(candidates.len(), 2);
+        let found = sniff_candidates(&candidates);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].name, "no-extension");
+
+        // Merging keeps the list sorted with the cursor file stable.
+        let mut merged = entries;
+        merged.extend(found);
+        sort_entries(&mut merged);
+        let names: Vec<&str> = merged.iter().map(|entry| entry.name.as_str()).collect();
+        assert_eq!(names, vec!["..", "no-extension"]);
+    }
+
+    /// Symlinks resolve like the old `stat`-everything scan did.
+    #[cfg(unix)]
+    #[test]
+    fn scan_fast_resolves_symlinks() {
+        let dir = tempfile::tempdir().unwrap();
+        let png = std::fs::read("tests/fixtures/photo.png").unwrap();
+        std::fs::create_dir(dir.path().join("real")).unwrap();
+        std::fs::write(dir.path().join("real.png"), &png).unwrap();
+        std::os::unix::fs::symlink(dir.path().join("real"), dir.path().join("linkdir")).unwrap();
+        std::os::unix::fs::symlink(dir.path().join("real.png"), dir.path().join("link.png")).unwrap();
+
+        let (entries, candidates, error) = scan_entries_fast(dir.path());
+        assert!(error.is_none());
+        assert!(entries.iter().any(|entry| entry.name == "linkdir" && entry.is_dir));
+        assert!(entries.iter().any(|entry| entry.name == "link.png" && !entry.is_dir));
+        assert!(candidates.is_empty());
+    }
 }

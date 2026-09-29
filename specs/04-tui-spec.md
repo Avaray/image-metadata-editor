@@ -10,7 +10,7 @@
 ## File tree panel
 
 - Always includes a `..` parent directory entry at the top (except at the filesystem root), and preserves navigation state per directory (remembering previously visited subdirectories and cursor positions).
-- Only directories and files detected as PNG/JPEG/WebP by magic bytes (see `03-business-logic.md`) are listed — anything else is omitted from the list entirely, not just unstyled. This scan happens once per directory (on entry, on `r`, or on a watch-triggered refresh — see below), not on every keystroke.
+- Only directories and PNG/JPEG/WebP files are listed — anything else is omitted from the list entirely, not just unstyled. The scan runs in two phases so huge directories appear instantly: phase one lists directories and image extensions from names alone (no `stat`, no file contents); phase two magic-sniffs the remaining files in the background (see `03-business-logic.md`) and merges whatever turns out to be an image, keeping the cursor on the same file. A file with an image extension whose bytes are not actually an image stays listed; opening it shows the usual "unsupported image format" preview error. This scan happens once per directory (on entry, on `r`, or on a watch-triggered refresh — see below), not on every keystroke.
 - Icons: a folder icon for directories, an image icon for PNG/JPEG/WebP files. Use plain Unicode symbols, not Nerd Font glyphs — Nerd Fonts require a patched font the user may not have installed, which would render as missing-glyph boxes and undermine the cross-platform/WSL2 consistency required below.
 - Navigation:
   - **Up/Down** — move the cursor among the currently visible entries. Wraps around: Up from the first entry moves to the last, Down from the last moves to the first.
@@ -74,7 +74,7 @@ Every inline text input (the leaf value editor, the `e` subtree editor, the sear
 
 ## Loading states
 
-Reading a directory (a magic-byte scan over potentially thousands of files) or loading a file's metadata can take longer than the UI should ever block for. Both run off the main thread, so the render loop stays responsive throughout. Two different navigation actions trigger this, and they're handled differently:
+Reading a directory or loading a file's metadata can take longer than the UI should ever block for. The directory list itself appears after the instant name-only phase-one scan; the phase-two background sniff and the metadata load both run off the main thread, so the render loop stays responsive throughout. Two different navigation actions trigger this, and they're handled differently:
 
 - **Changing directory (Left/Right in the file tree)** — while the scan for the target directory is in flight, further Left/Right presses in the file tree are ignored: there's nothing to navigate to yet, and letting them through risks a second (or third) directory scan starting before the first one even finishes. Up/Down, Tab, and the other global keys stay responsive throughout. **Esc** gives up waiting on an in-flight scan and unblocks navigation immediately; the abandoned scan is left to finish on its own in the background rather than force-killed, and its result is simply discarded when it arrives (see `05-architecture.md`).
 - **Metadata preview (Up/Down moving the file-tree cursor onto a different file)** — not blocked. Moving the cursor immediately starts loading the newly selected file's metadata; any still-in-flight load for the previous selection becomes irrelevant, and only the result for whichever file is currently selected when it arrives is ever shown.
