@@ -4,7 +4,7 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, List, ListItem, Paragraph};
+use ratatui::widgets::{Block, List, ListItem, Padding, Paragraph};
 
 use crate::tui::{App, Focus, Overlay};
 
@@ -21,7 +21,7 @@ pub fn render(app: &mut App, frame: &mut Frame) {
 }
 
 fn chrome_block() -> Block<'static> {
-    Block::bordered().border_style(Style::default().fg(Color::DarkGray))
+    Block::bordered().border_style(Style::default().fg(Color::DarkGray)).padding(Padding::horizontal(1))
 }
 
 fn render_top(app: &App, frame: &mut Frame, area: Rect) {
@@ -61,7 +61,8 @@ fn legend_text(app: &App) -> &'static str {
 
 fn panel_block(title: String, focused: bool) -> Block<'static> {
     let border = if focused { Style::default().fg(Color::Cyan) } else { Style::default().fg(Color::DarkGray) };
-    Block::bordered().title(title).border_style(border)
+    // Leading and trailing space: `┌ Files ┐` reads better than `┌Files┐`.
+    Block::bordered().title(format!(" {title} ")).border_style(border).padding(Padding::horizontal(1))
 }
 
 fn follow(scroll: &mut usize, cursor: usize, visible: usize) {
@@ -141,7 +142,7 @@ fn render_files(app: &mut App, frame: &mut Frame, area: Rect) {
 fn render_meta(app: &mut App, frame: &mut Frame, area: Rect) {
     let focused = app.focus == Focus::Meta && app.overlay.is_none();
     let breadcrumb = app.tree.as_ref().map(|tree| tree.breadcrumb()).unwrap_or_else(|| "Metadata".to_string());
-    let block = panel_block(left_truncate(&breadcrumb, area.width as usize), focused);
+    let block = panel_block(left_truncate(&breadcrumb, (area.width as usize).saturating_sub(2)), focused);
     let inner = block.inner(area);
     frame.render_widget(block, area);
     app.meta_view_height = inner.height as usize;

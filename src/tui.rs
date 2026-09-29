@@ -1188,6 +1188,46 @@ mod tests {
         assert_eq!(names, vec!["..", "no-extension"]);
     }
 
+    /// Every panel keeps one space of padding inside its borders, and the
+    /// Files/Metadata titles sit one cell right of the corner (`┌ Files ┐`).
+    #[test]
+    fn panels_pad_content_and_offset_titles() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.png");
+        std::fs::copy("tests/fixtures/photo.png", &path).unwrap();
+        let mut app = App::new(dir.path().to_path_buf(), None, false, false);
+        app.pending_dir = None;
+        app.entries = vec![FileEntry { name: "a.png".to_string(), path, is_dir: false, is_parent: false }];
+
+        let backend = ratatui::backend::TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| crate::tui_ui::render(&mut app, frame)).unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let symbol = |x: u16, y: u16| buffer[(x, y)].symbol().to_string();
+
+        // Top path panel: `│ /tmp/...`, not `│/tmp/...`.
+        assert_eq!(symbol(0, 1), "│");
+        assert_eq!(symbol(1, 1), " ");
+        // Bottom legend panel: `│ [Up/Down] ...`.
+        assert_eq!(symbol(0, 22), "│");
+        assert_eq!(symbol(1, 22), " ");
+        assert_eq!(symbol(2, 22), "[");
+        // Files panel title and first row (28 columns wide at 80x24).
+        assert_eq!(symbol(0, 3), "┌");
+        assert_eq!(symbol(1, 3), " ");
+        assert_eq!(symbol(2, 3), "F");
+        assert_eq!(symbol(0, 4), "│");
+        assert_eq!(symbol(1, 4), " ");
+        assert_eq!(symbol(2, 4), "•");
+        // Metadata panel title and placeholder row.
+        assert_eq!(symbol(28, 3), "┌");
+        assert_eq!(symbol(29, 3), " ");
+        assert_eq!(symbol(30, 3), "M");
+        assert_eq!(symbol(28, 4), "│");
+        assert_eq!(symbol(29, 4), " ");
+        assert_eq!(symbol(30, 4), "O");
+    }
+
     /// Symlinks resolve like the old `stat`-everything scan did.
     #[cfg(unix)]
     #[test]

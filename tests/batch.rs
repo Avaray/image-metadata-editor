@@ -37,7 +37,11 @@ fn read_batch(dir: &Path, extra: &[&str]) -> Value {
 }
 
 fn key(dir: &Path, name: &str) -> String {
-    dir.join(name).display().to_string()
+    let mut path = dir.to_path_buf();
+    for part in name.split('/') {
+        path.push(part);
+    }
+    path.display().to_string()
 }
 
 #[test]
