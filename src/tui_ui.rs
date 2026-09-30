@@ -163,14 +163,12 @@ fn render_meta(app: &mut App, frame: &mut Frame, area: Rect) {
         return;
     }
 
-    if app.preview_path.is_none() && app.preview_loading.is_none() {
+    if app.preview_path.is_none() && app.preview_loading.is_none() && app.preview_pending.is_none() {
         frame.render_widget(Paragraph::new("Open an image to load metadata.").style(Style::default().fg(Color::DarkGray)), inner);
         return;
     }
-    if let Some((_, since)) = &app.preview_loading
-        && let Some(frame_char) = spinner(*since)
-    {
-        frame.render_widget(Paragraph::new(format!("{frame_char} Loading...")), inner);
+    if app.preview_pending.is_some() || app.preview_loading.is_some() {
+        frame.render_widget(Paragraph::new("···").style(Style::default().fg(Color::DarkGray)), inner);
         return;
     }
     if let Some(error) = &app.preview_error {
