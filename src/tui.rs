@@ -157,7 +157,7 @@ pub(crate) struct App {
     pub meta_scroll: usize,
     pub file_view_height: usize,
     pub meta_view_height: usize,
-    pub restore_drill: Option<(PathBuf, Vec<Segment>, usize)>,
+    pub restore_drill: Option<(PathBuf, Vec<Segment>, usize, Vec<usize>)>,
     pub overlay: Option<Overlay>,
     pub status: Option<String>,
     pub status_time: Option<Instant>,
@@ -272,10 +272,10 @@ impl App {
                 match resp.stored {
                     Ok(stored) => {
                         let mut tree = MetaTree::new(stored);
-                        if let Some((path, drill, cursor)) = self.restore_drill.take()
+                        if let Some((path, drill, cursor, history)) = self.restore_drill.take()
                             && path == resp.path
                         {
-                            tree.restore(drill, cursor);
+                            tree.restore(drill, cursor, history);
                         }
                         self.tree = Some(tree);
                         self.preview_error = None;
@@ -964,7 +964,7 @@ impl App {
         if let Some(tree) = self.tree.as_ref()
             && let Some(path) = self.preview_path.clone()
         {
-            self.restore_drill = Some((path.clone(), tree.drill().to_vec(), tree.cursor()));
+            self.restore_drill = Some((path.clone(), tree.drill().to_vec(), tree.cursor(), tree.cursor_history().to_vec()));
             self.preview_loading = None;
             self.preview_pending = None;
             self.request_preview(path);

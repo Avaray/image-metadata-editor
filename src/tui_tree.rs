@@ -36,13 +36,14 @@ pub struct MetaTree {
     display: Value,
     drill: Vec<Segment>,
     cursor: usize,
+    cursor_history: Vec<usize>,
 }
 
 impl MetaTree {
     pub fn new(stored: Value) -> Self {
         let mut display = stored.clone();
         crate::meta::traverse_value(&mut display);
-        Self { stored, display, drill: Vec::new(), cursor: 0 }
+        Self { stored, display, drill: Vec::new(), cursor: 0, cursor_history: Vec::new() }
     }
 
     pub fn drill(&self) -> &[Segment] {
@@ -51,6 +52,10 @@ impl MetaTree {
 
     pub fn cursor(&self) -> usize {
         self.cursor
+    }
+
+    pub fn cursor_history(&self) -> &[usize] {
+        &self.cursor_history
     }
 
     /// Move the cursor, wrapping around at the ends.
@@ -125,6 +130,7 @@ impl MetaTree {
             return false;
         }
         self.drill = path;
+        self.cursor_history.push(self.cursor);
         self.cursor = 0;
         true
     }
@@ -134,7 +140,7 @@ impl MetaTree {
         if self.drill.pop().is_none() {
             return false;
         }
-        self.cursor = 0;
+        self.cursor = self.cursor_history.pop().unwrap_or(0);
         true
     }
 
@@ -156,16 +162,21 @@ impl MetaTree {
 
     /// Restore a drill path after a reload, dropping trailing segments that no
     /// longer resolve, and clamp the cursor into range.
-    pub fn restore(&mut self, drill: Vec<Segment>, cursor: usize) {
+    pub fn restore(&mut self, drill: Vec<Segment>, cursor: usize, history: Vec<usize>) {
         let mut kept = Vec::new();
-        for segment in drill {
+        let mut kept_history = Vec::new();
+        for (i, segment) in drill.into_iter().enumerate() {
             kept.push(segment);
             if walk(&self.display, &kept).is_none() {
                 kept.pop();
                 break;
             }
+            if i < history.len() {
+                kept_history.push(history[i]);
+            }
         }
         self.drill = kept;
+        self.cursor_history = kept_history;
         self.set_cursor(cursor);
     }
 
@@ -184,10 +195,14 @@ impl MetaTree {
     pub fn jump_to(&mut self, path: &[Segment]) {
         let Some((last, parent)) = path.split_last() else {
             self.drill.clear();
+            self.cursor_history.clear();
             self.cursor = 0;
             return;
         };
         self.drill = parent.to_vec();
+        // Fill history with zeros up to the new depth if we jumped
+        self.cursor_history.clear();
+        self.cursor_history.resize(parent.len(), 0);
         self.cursor = self.rows().iter().position(|row| &row.segment == last).unwrap_or(0);
     }
 
