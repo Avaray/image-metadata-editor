@@ -154,7 +154,10 @@ fn render_files(app: &mut App, frame: &mut Frame, area: Rect) {
 
 fn render_meta(app: &mut App, frame: &mut Frame, area: Rect) {
     let focused = app.focus == Focus::Meta && app.overlay.is_none();
-    let breadcrumb = app.tree.as_ref().map(|tree| tree.breadcrumb()).unwrap_or_else(|| "Metadata".to_string());
+    let mut breadcrumb = app.tree.as_ref().map(|tree| tree.breadcrumb()).unwrap_or_else(|| "Metadata".to_string());
+    if app.preview_modified {
+        breadcrumb.push_str(" [Modified]");
+    }
     let block = panel_block(left_truncate(&breadcrumb, (area.width as usize).saturating_sub(2)), focused);
     let inner = block.inner(area);
     frame.render_widget(block, area);

@@ -129,7 +129,7 @@ struct ScanResp {
 
 struct MetaResp {
     path: PathBuf,
-    stored: Result<Value, String>,
+    stored: Result<(Vec<u8>, Value), String>,
 }
 
 pub(crate) struct WatchState {
@@ -150,6 +150,8 @@ pub(crate) struct App {
     pub initial_select: Option<String>,
     pub focus: Focus,
     pub preview_path: Option<PathBuf>,
+    pub preview_bytes: Option<Vec<u8>>,
+    pub preview_modified: bool,
     pub tree: Option<MetaTree>,
     pub preview_error: Option<String>,
     pub preview_loading: Option<(PathBuf, Instant)>,
@@ -188,6 +190,8 @@ impl App {
             initial_select: select,
             focus: Focus::Files,
             preview_path: None,
+            preview_bytes: None,
+            preview_modified: false,
             tree: None,
             preview_error: None,
             preview_loading: None,
@@ -270,7 +274,7 @@ impl App {
                 self.preview_loading = None;
                 self.preview_path = Some(resp.path.clone());
                 match resp.stored {
-                    Ok(stored) => {
+                    Ok((bytes, stored)) => {
                         let mut tree = MetaTree::new(stored);
                         if let Some((path, drill, cursor, history)) = self.restore_drill.take()
                             && path == resp.path
@@ -278,6 +282,7 @@ impl App {
                             tree.restore(drill, cursor, history);
                         }
                         self.tree = Some(tree);
+                        self.preview_bytes = Some(bytes);
                         self.preview_error = None;
                     }
                     Err(message) => {
@@ -500,7 +505,9 @@ impl App {
                 return;
             }
             KeyCode::Char('q') if key.modifiers == KeyModifiers::NONE => {
-                self.quit = true;
+                if !self.check_unsaved() {
+                    self.quit = true;
+                }
                 return;
             }
             KeyCode::Esc => {
@@ -519,25 +526,53 @@ impl App {
 
     fn files_key(&mut self, key: KeyEvent) {
         match (key.code, key.modifiers) {
-            (KeyCode::Up, KeyModifiers::NONE) => self.move_file_cursor(-1),
-            (KeyCode::Down, KeyModifiers::NONE) => self.move_file_cursor(1),
-            (KeyCode::PageUp, KeyModifiers::NONE) => self.page_file_cursor(-(self.file_view_height.max(1) as isize)),
-            (KeyCode::PageDown, KeyModifiers::NONE) => self.page_file_cursor(self.file_view_height.max(1) as isize),
+            (KeyCode::Char('s'), KeyModifiers::CONTROL) => self.save_preview(),
+            (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
+                if self.preview_modified {
+                    self.preview_modified = false;
+                    self.reload_preview();
+                    self.set_status("Discarded changes".to_string());
+                }
+            }
+            (KeyCode::Up, KeyModifiers::NONE) => {
+                if !self.check_unsaved() {
+                    self.move_file_cursor(-1);
+                }
+            }
+            (KeyCode::Down, KeyModifiers::NONE) => {
+                if !self.check_unsaved() {
+                    self.move_file_cursor(1);
+                }
+            }
+            (KeyCode::PageUp, KeyModifiers::NONE) => {
+                if !self.check_unsaved() {
+                    self.page_file_cursor(-(self.file_view_height.max(1) as isize));
+                }
+            }
+            (KeyCode::PageDown, KeyModifiers::NONE) => {
+                if !self.check_unsaved() {
+                    self.page_file_cursor(self.file_view_height.max(1) as isize);
+                }
+            }
             (KeyCode::Right, KeyModifiers::NONE) | (KeyCode::Enter, KeyModifiers::NONE) => {
                 if self.pending_dir.is_some() {
                     return;
                 }
-                match self.entries.get(self.file_cursor) {
-                    // Entering `..` via Right would duplicate Left; going up is Left's job.
-                    Some(entry) if entry.is_dir && !entry.is_parent => {
-                        let path = entry.path.clone();
-                        self.navigate_to(path);
+                let target = self.entries.get(self.file_cursor).map(|e| (e.is_dir, e.is_parent, e.path.clone()));
+                match target {
+                    Some((true, false, path)) => {
+                        if !self.check_unsaved() {
+                            self.navigate_to(path);
+                        }
                     }
-                    Some(entry) if !entry.is_dir => self.focus = Focus::Meta,
+                    Some((false, _, _)) => self.focus = Focus::Meta,
                     _ => {}
                 }
             }
             (KeyCode::Left, KeyModifiers::NONE) => {
+                if self.check_unsaved() {
+                    return;
+                }
                 if self.pending_dir.is_some() {
                     return;
                 }
@@ -546,6 +581,9 @@ impl App {
                 }
             }
             (KeyCode::Left, KeyModifiers::CONTROL) => {
+                if self.check_unsaved() {
+                    return;
+                }
                 if self.pending_dir.is_some() {
                     return;
                 }
@@ -577,6 +615,14 @@ impl App {
 
     fn meta_key(&mut self, key: KeyEvent) {
         match (key.code, key.modifiers) {
+            (KeyCode::Char('s'), KeyModifiers::CONTROL) => self.save_preview(),
+            (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
+                if self.preview_modified {
+                    self.preview_modified = false;
+                    self.reload_preview();
+                    self.set_status("Discarded changes".to_string());
+                }
+            }
             (KeyCode::Up, KeyModifiers::NONE) => {
                 if let Some(tree) = self.tree.as_mut() {
                     tree.move_cursor(-1);
@@ -607,6 +653,9 @@ impl App {
             (KeyCode::Left, KeyModifiers::NONE) => {
                 let at_root = self.tree.as_ref().is_none_or(|tree| tree.drill().is_empty());
                 if at_root {
+                    if self.check_unsaved() {
+                        return;
+                    }
                     self.focus = Focus::Files;
                 } else if let Some(tree) = self.tree.as_mut() {
                     tree.drill_up();
@@ -660,6 +709,15 @@ impl App {
         }
     }
 
+    fn check_unsaved(&mut self) -> bool {
+        if self.preview_modified {
+            self.set_status("Unsaved changes! Press Ctrl+S to save, or Ctrl+D to discard.".to_string());
+            true
+        } else {
+            false
+        }
+    }
+
     fn move_file_cursor(&mut self, delta: isize) {
         if self.entries.is_empty() {
             return;
@@ -702,13 +760,41 @@ impl App {
         }
     }
 
-    fn wipe_file_at(&mut self, path: &Path) {
-        match wipe_file(path) {
+    fn save_preview(&mut self) {
+        if !self.preview_modified {
+            return;
+        }
+        let Some(path) = self.preview_path.as_ref() else { return };
+        let Some(bytes) = self.preview_bytes.as_ref() else { return };
+        match crate::write::write_atomic(path, bytes) {
             Ok(()) => {
-                self.set_status(format!("wiped '{}'", path.file_name().map(|name| name.to_string_lossy()).unwrap_or_default()));
-                self.reload_preview();
+                self.preview_modified = false;
+                self.set_status("File saved".to_string());
             }
-            Err(message) => self.set_status(message),
+            Err(err) => self.set_status(format!("save failed: {err}")),
+        }
+    }
+
+    fn wipe_file_at(&mut self, path: &Path) {
+        let Some(bytes) = self.preview_bytes.as_ref() else { return };
+        let format = match crate::format::detect(bytes) {
+            Some(f) => f,
+            None => return,
+        };
+        match crate::write::apply_wipe(bytes, format) {
+            Ok(outcome) => {
+                if outcome.changed {
+                    if let Err(err) = crate::write::verify(bytes, &outcome.bytes, format) {
+                        self.set_status(err.to_string());
+                        return;
+                    }
+                    self.preview_bytes = Some(outcome.bytes);
+                    self.preview_modified = true;
+                    self.reload_preview_memory();
+                }
+                self.set_status(format!("wiped '{}'", path.file_name().map(|name| name.to_string_lossy()).unwrap_or_default()));
+            }
+            Err(err) => self.set_status(err.to_string()),
         }
     }
 
@@ -942,19 +1028,19 @@ impl App {
     /// Validate and immediately persist one tree edit through the same
     /// atomic-write-and-verify pipeline `--set` uses, then reload the preview.
     fn commit_edit(&mut self, path: &[Segment], edit: &Edit) -> Result<(), String> {
-        let file = self.preview_path.clone().ok_or_else(|| "no file loaded".to_string())?;
+        let bytes = self.preview_bytes.as_ref().ok_or_else(|| "no file loaded".to_string())?;
         let tree = self.tree.as_ref().ok_or_else(|| "no file loaded".to_string())?;
         let payload = tree.build_edit_payload(path, edit);
         let text = serde_json::to_string(&payload).map_err(|err| format!("cannot encode edit: {err}"))?;
         let parsed = crate::merge::parse_set_payload(&text).map_err(|err| err.to_string())?;
-        let bytes = std::fs::read(&file).map_err(|err| format!("cannot read file: {err}"))?;
-        let format = crate::format::detect(&bytes).ok_or_else(|| "unsupported image format".to_string())?;
-        let outcome = crate::write::apply_set(&bytes, format, std::slice::from_ref(&parsed)).map_err(|err| err.to_string())?;
+        let format = crate::format::detect(bytes).ok_or_else(|| "unsupported image format".to_string())?;
+        let outcome = crate::write::apply_set(bytes, format, std::slice::from_ref(&parsed)).map_err(|err| err.to_string())?;
         if outcome.changed {
-            crate::write::verify(&bytes, &outcome.bytes, format).map_err(|err| err.to_string())?;
-            crate::write::write_atomic(&file, &outcome.bytes).map_err(|err| err.to_string())?;
+            crate::write::verify(bytes, &outcome.bytes, format).map_err(|err| err.to_string())?;
+            self.preview_bytes = Some(outcome.bytes);
+            self.preview_modified = true;
         }
-        self.reload_preview();
+        self.reload_preview_memory();
         Ok(())
     }
 
@@ -966,6 +1052,31 @@ impl App {
             self.preview_loading = None;
             self.preview_pending = None;
             self.request_preview(path);
+        }
+    }
+
+    fn reload_preview_memory(&mut self) {
+        if let Some(tree) = self.tree.as_ref()
+            && let Some(bytes) = self.preview_bytes.as_ref()
+        {
+            let format = match crate::format::detect(bytes) {
+                Some(f) => f,
+                None => {
+                    self.preview_error = Some("unsupported image format".to_string());
+                    return;
+                }
+            };
+            match crate::meta::read_metadata_raw(bytes, format) {
+                Ok(metadata) => {
+                    let mut new_tree = MetaTree::new(metadata.to_value());
+                    new_tree.restore(tree.drill().to_vec(), tree.cursor(), tree.cursor_history().to_vec());
+                    self.tree = Some(new_tree);
+                    self.preview_error = None;
+                }
+                Err(err) => {
+                    self.preview_error = Some(err.to_string());
+                }
+            }
         }
     }
 }
@@ -1050,21 +1161,10 @@ fn parse_leaf_value(typed: &str) -> Result<Value, String> {
     }
 }
 
-fn wipe_file(path: &Path) -> Result<(), String> {
+fn load_stored(path: &Path) -> Result<(Vec<u8>, Value), String> {
     let bytes = std::fs::read(path).map_err(|err| format!("cannot read file: {err}"))?;
     let format = crate::format::detect(&bytes).ok_or_else(|| "unsupported image format".to_string())?;
-    let outcome = crate::write::apply_wipe(&bytes, format).map_err(|err| err.to_string())?;
-    if outcome.changed {
-        crate::write::verify(&bytes, &outcome.bytes, format).map_err(|err| err.to_string())?;
-        crate::write::write_atomic(path, &outcome.bytes).map_err(|err| err.to_string())?;
-    }
-    Ok(())
-}
-
-fn load_stored(path: &Path) -> Result<Value, String> {
-    let bytes = std::fs::read(path).map_err(|err| format!("cannot read file: {err}"))?;
-    let format = crate::format::detect(&bytes).ok_or_else(|| "unsupported image format".to_string())?;
-    crate::meta::read_metadata_raw(&bytes, format).map(|metadata| metadata.to_value()).map_err(|err| err.to_string())
+    crate::meta::read_metadata_raw(&bytes, format).map(|metadata| (bytes, metadata.to_value())).map_err(|err| err.to_string())
 }
 
 /// The parent directory, or `None` at the filesystem root. On Windows the
