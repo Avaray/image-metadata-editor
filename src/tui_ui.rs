@@ -36,7 +36,8 @@ fn render_top(app: &App, frame: &mut Frame, area: Rect) {
 }
 
 fn render_bottom(app: &App, frame: &mut Frame, area: Rect) {
-    let version_text = format!("🧬 IME v{}", env!("CARGO_PKG_VERSION"));
+    let icon = if app.power { "⚡️" } else { "🧬" };
+    let version_text = format!("{icon} IME v{}", env!("CARGO_PKG_VERSION"));
     // Block has left/right borders (2) + horizontal padding 1 (2) = 4 extra columns
     let version_line = Line::raw(&version_text);
     let version_width = version_line.width() as u16 + 4;
