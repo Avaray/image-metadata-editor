@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -168,7 +168,11 @@ fn render_meta(app: &mut App, frame: &mut Frame, area: Rect) {
         return;
     }
     if app.preview_pending.is_some() || app.preview_loading.is_some() {
-        frame.render_widget(Paragraph::new("···").style(Style::default().fg(Color::DarkGray)), inner);
+        let phase = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() / 300 % 3;
+        let dim = Style::default().fg(Color::DarkGray);
+        let lit = Style::default().fg(Color::White);
+        let dots = Line::from(vec![Span::styled("·", if phase == 0 { lit } else { dim }), Span::styled(" ·", if phase == 1 { lit } else { dim }), Span::styled(" ·", if phase == 2 { lit } else { dim })]);
+        frame.render_widget(Paragraph::new(dots), inner);
         return;
     }
     if let Some(error) = &app.preview_error {
