@@ -36,11 +36,23 @@ fn render_top(app: &App, frame: &mut Frame, area: Rect) {
 }
 
 fn render_bottom(app: &App, frame: &mut Frame, area: Rect) {
-    let block = chrome_block();
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
+    let version_text = format!("🧬 IME v{}", env!("CARGO_PKG_VERSION"));
+    // Block has left/right borders (2) + horizontal padding 1 (2) = 4 extra columns
+    let version_line = Line::raw(&version_text);
+    let version_width = version_line.width() as u16 + 4;
+
+    let chunks = Layout::horizontal([Constraint::Min(0), Constraint::Length(version_width)]).split(area);
+
+    let left_block = chrome_block();
+    let left_inner = left_block.inner(chunks[0]);
+    frame.render_widget(left_block, chunks[0]);
     let legend = if let Some(status) = &app.status { Line::styled(status.clone(), Style::default().fg(Color::Yellow)) } else { Line::raw(legend_text(app)) };
-    frame.render_widget(Paragraph::new(legend), inner);
+    frame.render_widget(Paragraph::new(legend), left_inner);
+
+    let right_block = chrome_block();
+    let right_inner = right_block.inner(chunks[1]);
+    frame.render_widget(right_block, chunks[1]);
+    frame.render_widget(Paragraph::new(version_text), right_inner);
 }
 
 fn legend_text(app: &App) -> &'static str {
