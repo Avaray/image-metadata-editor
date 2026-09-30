@@ -299,12 +299,23 @@ impl App {
         self.scan_error = resp.error;
         self.file_cursor = 0;
         self.file_scroll = 0;
-        if let Some(name) = self.initial_select.take() {
-            if let Some(index) = self.entries.iter().position(|entry| entry.name == name) {
+        let initial = self.initial_select.take();
+        let mut selecting_initial = false;
+        if let Some(name) = initial.as_ref() {
+            if let Some(index) = self.entries.iter().position(|entry| entry.name == *name) {
                 self.file_cursor = index;
+                selecting_initial = true;
+                if !self.entries[index].is_dir {
+                    self.focus = Focus::Meta;
+                }
+            } else {
+                self.initial_select = initial;
             }
-        } else if let Some(saved) = self.dir_states.get(&resp.dir) {
-            self.file_cursor = (*saved).min(self.entries.len().saturating_sub(1));
+        }
+        if !selecting_initial {
+            if let Some(saved) = self.dir_states.get(&resp.dir) {
+                self.file_cursor = (*saved).min(self.entries.len().saturating_sub(1));
+            }
         }
         self.refresh_watcher();
         self.selection_changed();
@@ -321,10 +332,23 @@ impl App {
     /// Merge phase-two images into the visible list, keeping the cursor on
     /// the same file (entries are only added, so the selection survives).
     fn apply_extra(&mut self, resp: ScanResp) {
-        let selected = self.entries.get(self.file_cursor).map(|entry| entry.name.clone());
+        let mut selected = self.entries.get(self.file_cursor).map(|entry| entry.name.clone());
+        let mut focus_meta = false;
+
+        if let Some(name) = self.initial_select.as_ref() {
+            if resp.entries.iter().any(|entry| entry.name == *name) {
+                selected = Some(name.clone());
+                self.initial_select = None;
+                focus_meta = true;
+            }
+        }
+
         self.entries.extend(resp.entries);
         sort_entries(&mut self.entries);
         self.file_cursor = selected.and_then(|name| self.entries.iter().position(|entry| entry.name == name)).unwrap_or(0).min(self.entries.len().saturating_sub(1));
+        if focus_meta && !self.entries[self.file_cursor].is_dir {
+            self.focus = Focus::Meta;
+        }
         self.selection_changed();
     }
 
@@ -425,6 +449,7 @@ impl App {
     }
 
     fn navigate_to(&mut self, dir: PathBuf) {
+        self.initial_select = None;
         self.dir_states.insert(self.dir.clone(), self.file_cursor);
         self.preview_path = None;
         self.tree = None;
