@@ -439,11 +439,15 @@ impl App {
                 }
             }
             None => {
+                // Clear stale data but intentionally leave preview_pending
+                // untouched: this keeps the dots animation running while the
+                // cursor passes through directory entries during fast
+                // navigation. preview_pending is None at startup, so the
+                // empty-state message still shows before any file is visited.
                 self.preview_path = None;
                 self.tree = None;
                 self.preview_error = None;
                 self.preview_loading = None;
-                self.preview_pending = None;
             }
         }
     }
