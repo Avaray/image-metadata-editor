@@ -406,7 +406,7 @@ impl App {
         }
 
         if let Some((path, since)) = self.preview_pending.clone()
-            && since.elapsed() >= Duration::from_millis(50)
+            && since.elapsed() >= Duration::from_millis(200)
         {
             self.preview_pending = None;
             if self.selected_file().as_ref() == Some(&path) {
