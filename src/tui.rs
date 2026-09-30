@@ -109,7 +109,7 @@ pub(crate) enum ConfirmAction {
 
 pub(crate) enum Overlay {
     Search { input: Input, panel: Focus },
-    LeafEdit { input: Input, path: Vec<Segment>, error: Option<String> },
+    LeafEdit { lines: Vec<Input>, line: usize, path: Vec<Segment>, error: Option<String> },
     SubtreeEdit { lines: Vec<Input>, line: usize, path: Vec<Segment>, error: Option<String> },
     NewKey { input: Input, error: Option<String> },
     NewValue { input: Input, key: Option<String>, error: Option<String> },
@@ -716,9 +716,16 @@ impl App {
 
     fn open_leaf_editor(&mut self, path: Vec<Segment>) {
         let text = self.tree.as_ref().and_then(|tree| tree.value_at(&path)).map(crate::tui_tree::leaf_text).unwrap_or_default();
-        let mut input = Input::new(text);
-        input.handle(tui_input::InputRequest::GoToEnd);
-        self.overlay = Some(Overlay::LeafEdit { input, path, error: None });
+        let lines = text
+            .lines()
+            .map(|line| {
+                let mut input = Input::new(line.to_string());
+                input.handle(tui_input::InputRequest::GoToEnd);
+                input
+            })
+            .collect::<Vec<_>>();
+        let lines = if lines.is_empty() { vec![Input::default()] } else { lines };
+        self.overlay = Some(Overlay::LeafEdit { lines, line: 0, path, error: None });
     }
 
     fn open_subtree_editor(&mut self) {
@@ -778,27 +785,9 @@ impl App {
                     self.overlay = Some(Overlay::Search { input, panel });
                 }
             },
-            Some(Overlay::LeafEdit { mut input, path, error: _ }) => match key.code {
-                KeyCode::Esc => {}
-                KeyCode::Enter if key.modifiers == KeyModifiers::NONE => {
-                    let typed = input.value().to_string();
-                    match parse_leaf_value(&typed) {
-                        Ok(value) => match self.commit_edit(&path, &Edit::Set(value)) {
-                            Ok(()) => {}
-                            Err(message) => {
-                                self.overlay = Some(Overlay::LeafEdit { input, path, error: Some(message) });
-                            }
-                        },
-                        Err(message) => {
-                            self.overlay = Some(Overlay::LeafEdit { input, path, error: Some(message) });
-                        }
-                    }
-                }
-                _ => {
-                    input_key(&mut input, key);
-                    self.overlay = Some(Overlay::LeafEdit { input, path, error: None });
-                }
-            },
+            Some(Overlay::LeafEdit { mut lines, mut line, path, mut error }) => {
+                self.multi_line_key(key, &mut lines, &mut line, path, &mut error, false);
+            }
             Some(Overlay::NewKey { mut input, error: _ }) => match key.code {
                 KeyCode::Esc => {}
                 KeyCode::Enter if key.modifiers == KeyModifiers::NONE => {
@@ -847,68 +836,72 @@ impl App {
                 }
             },
             Some(Overlay::SubtreeEdit { mut lines, mut line, path, mut error }) => {
-                self.subtree_key(key, &mut lines, &mut line, path, &mut error);
+                self.multi_line_key(key, &mut lines, &mut line, path, &mut error, true);
             }
         }
     }
 
-    fn subtree_key(&mut self, key: KeyEvent, lines: &mut Vec<Input>, line: &mut usize, path: Vec<Segment>, error: &mut Option<String>) {
+    fn multi_line_key(&mut self, key: KeyEvent, lines: &mut Vec<Input>, line: &mut usize, path: Vec<Segment>, error: &mut Option<String>, json: bool) {
+        let make_overlay = |lines, line, error| {
+            if json { Overlay::SubtreeEdit { lines, line, path: path.clone(), error } } else { Overlay::LeafEdit { lines, line, path: path.clone(), error } }
+        };
         match (key.code, key.modifiers) {
             (KeyCode::Esc, _) => {}
             (KeyCode::Enter, KeyModifiers::NONE) => {
                 let text: Vec<&str> = lines.iter().map(|input| input.value()).collect();
-                match parse_json5(&text.join("\n")) {
+                let parsed = if json { parse_json5(&text.join("\n")) } else { parse_leaf_value(&text.join("\n")) };
+                match parsed {
                     Ok(value) => match self.commit_edit(&path, &Edit::Set(value)) {
                         Ok(()) => {}
                         Err(message) => {
                             *error = Some(message);
-                            self.overlay = Some(Overlay::SubtreeEdit { lines: std::mem::take(lines), line: *line, path, error: error.clone() });
+                            self.overlay = Some(make_overlay(std::mem::take(lines), *line, error.clone()));
                         }
                     },
                     Err(message) => {
                         *error = Some(message);
-                        self.overlay = Some(Overlay::SubtreeEdit { lines: std::mem::take(lines), line: *line, path, error: error.clone() });
+                        self.overlay = Some(make_overlay(std::mem::take(lines), *line, error.clone()));
                     }
                 }
             }
             // A newline inside the multi-line editor (Enter itself confirms).
-            (KeyCode::Enter, KeyModifiers::ALT) | (KeyCode::Char('j'), KeyModifiers::CONTROL) => {
+            (KeyCode::Enter, KeyModifiers::SHIFT) | (KeyCode::Char('j'), KeyModifiers::CONTROL) => {
                 *error = None;
                 split_line(lines, line);
-                self.overlay = Some(Overlay::SubtreeEdit { lines: std::mem::take(lines), line: *line, path, error: None });
+                self.overlay = Some(make_overlay(std::mem::take(lines), *line, None));
             }
             (KeyCode::Up, KeyModifiers::NONE) => {
                 *line = line.saturating_sub(1);
-                self.overlay = Some(Overlay::SubtreeEdit { lines: std::mem::take(lines), line: *line, path, error: error.clone() });
+                self.overlay = Some(make_overlay(std::mem::take(lines), *line, error.clone()));
             }
             (KeyCode::Down, KeyModifiers::NONE) => {
                 *line = (*line + 1).min(lines.len().saturating_sub(1));
-                self.overlay = Some(Overlay::SubtreeEdit { lines: std::mem::take(lines), line: *line, path, error: error.clone() });
+                self.overlay = Some(make_overlay(std::mem::take(lines), *line, error.clone()));
             }
             (KeyCode::Backspace, KeyModifiers::NONE) if lines[*line].cursor() == 0 && *line > 0 => {
                 *error = None;
                 join_with_previous(lines, line);
-                self.overlay = Some(Overlay::SubtreeEdit { lines: std::mem::take(lines), line: *line, path, error: None });
+                self.overlay = Some(make_overlay(std::mem::take(lines), *line, None));
             }
             (KeyCode::Delete, KeyModifiers::NONE) if lines[*line].cursor() == lines[*line].value().chars().count() && *line + 1 < lines.len() => {
                 *error = None;
                 join_with_next(lines, line);
-                self.overlay = Some(Overlay::SubtreeEdit { lines: std::mem::take(lines), line: *line, path, error: None });
+                self.overlay = Some(make_overlay(std::mem::take(lines), *line, None));
             }
             (KeyCode::Left, KeyModifiers::NONE) if lines[*line].cursor() == 0 && *line > 0 => {
                 *line -= 1;
                 lines[*line].handle(tui_input::InputRequest::GoToEnd);
-                self.overlay = Some(Overlay::SubtreeEdit { lines: std::mem::take(lines), line: *line, path, error: error.clone() });
+                self.overlay = Some(make_overlay(std::mem::take(lines), *line, error.clone()));
             }
             (KeyCode::Right, KeyModifiers::NONE) if lines[*line].cursor() == lines[*line].value().chars().count() && *line + 1 < lines.len() => {
                 *line += 1;
                 lines[*line].handle(tui_input::InputRequest::GoToStart);
-                self.overlay = Some(Overlay::SubtreeEdit { lines: std::mem::take(lines), line: *line, path, error: error.clone() });
+                self.overlay = Some(make_overlay(std::mem::take(lines), *line, error.clone()));
             }
             _ => {
                 *error = None;
                 input_key(&mut lines[*line], key);
-                self.overlay = Some(Overlay::SubtreeEdit { lines: std::mem::take(lines), line: *line, path, error: None });
+                self.overlay = Some(make_overlay(std::mem::take(lines), *line, None));
             }
         }
     }

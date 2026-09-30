@@ -60,8 +60,8 @@ fn legend_text(app: &App) -> &'static str {
     if let Some(overlay) = &app.overlay {
         return match overlay {
             Overlay::Search { .. } => "[Enter] Jump to match | [Esc] Cancel",
-            Overlay::LeafEdit { .. } | Overlay::NewKey { .. } | Overlay::NewValue { .. } => "[Enter] Confirm | [Esc] Cancel",
-            Overlay::SubtreeEdit { .. } => "[Enter] Confirm | [Alt+Enter] Newline | [Esc] Cancel",
+            Overlay::NewKey { .. } | Overlay::NewValue { .. } => "[Enter] Confirm | [Esc] Cancel",
+            Overlay::LeafEdit { .. } | Overlay::SubtreeEdit { .. } => "[Enter] Confirm | [Shift+Enter] Newline | [Esc] Cancel",
             Overlay::Confirm { .. } => "[Left/Right] Select | [Enter] Confirm | [Esc] Cancel",
             Overlay::About => "[Esc] Close",
         };
@@ -269,9 +269,7 @@ fn render_overlay(app: &mut App, frame: &mut Frame, area: Rect) {
             let count = if matches == 1 { "1 match".to_string() } else { format!("{matches} matches") };
             frame.render_widget(Paragraph::new(count).style(Style::default().fg(Color::DarkGray)), Rect::new(inner.x, inner.y + 2, inner.width, 1));
         }
-        Some(Overlay::LeafEdit { input, error, .. }) => {
-            overlay_editor(frame, area, "Edit value", input, error, &["Enter confirms · Esc cancels"]);
-        }
+
         Some(Overlay::NewKey { input, error }) => {
             overlay_editor(frame, area, "New key name", input, error, &["Enter continues to the value prompt · Esc cancels"]);
         }
@@ -282,16 +280,18 @@ fn render_overlay(app: &mut App, frame: &mut Frame, area: Rect) {
             };
             overlay_editor(frame, area, &title, input, error, &["Lenient JSON5 · Enter confirms · Esc cancels"]);
         }
-        Some(Overlay::SubtreeEdit { lines, line, error, .. }) => {
+        Some(Overlay::LeafEdit { lines, line, error, .. }) | Some(Overlay::SubtreeEdit { lines, line, error, .. }) => {
+            let is_json = matches!(app.overlay, Some(Overlay::SubtreeEdit { .. }));
             let area = popup(area, area.width * 70 / 100, area.height * 70 / 100);
             frame.render_widget(ratatui::widgets::Clear, area);
-            let block = Block::bordered().title("Edit JSON");
+            let title = if is_json { "Edit JSON" } else { "Edit value" };
+            let block = Block::bordered().title(title);
             let inner = block.inner(area);
             frame.render_widget(block, area);
             if inner.width < 3 || inner.height < 3 {
                 return;
             }
-            let hint_lines = 2u16 + u16::from(error.is_some());
+            let hint_lines = 3u16 + u16::from(error.is_some());
             let visible = (inner.height.saturating_sub(hint_lines)) as usize;
             let mut scroll = line.saturating_sub(visible.saturating_sub(1));
             if *line < scroll {
@@ -311,7 +311,7 @@ fn render_overlay(app: &mut App, frame: &mut Frame, area: Rect) {
             let width = inner.width.saturating_sub(1) as usize;
             let view_scroll = active.visual_scroll(width);
             frame.set_cursor_position(((inner.x + (active.visual_cursor().max(view_scroll) - view_scroll) as u16), inner.y + (*line - scroll) as u16));
-            let mut hints = vec![Line::styled("Enter confirms · Alt+Enter newline · Esc cancels", Style::default().fg(Color::DarkGray))];
+            let mut hints = vec![Line::styled(if is_json { "Strict JSON5" } else { "Raw text · Lenient JSON5" }, Style::default().fg(Color::DarkGray)), Line::styled("Enter confirms · Shift+Enter newline · Esc cancels", Style::default().fg(Color::DarkGray))];
             if let Some(error) = error {
                 hints.push(Line::styled(error.clone(), Style::default().fg(Color::Red)));
             }
