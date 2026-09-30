@@ -163,19 +163,8 @@ fn render_meta(app: &mut App, frame: &mut Frame, area: Rect) {
         return;
     }
 
-    if app.preview_path.is_none() && app.preview_loading.is_none() && app.preview_pending.is_none() {
+    if app.preview_path.is_none() && app.preview_loading.is_none() {
         frame.render_widget(Paragraph::new("Open an image to load metadata.").style(Style::default().fg(Color::DarkGray)), inner);
-        return;
-    }
-    // Debounce window: the user is still navigating — show animated dots so
-    // they know the panel is aware of the new selection.
-    if let Some((_, since)) = &app.preview_pending {
-        let dots = match (since.elapsed().as_millis() / 333) % 3 {
-            0 => "·",
-            1 => "··",
-            _ => "···",
-        };
-        frame.render_widget(Paragraph::new(dots).style(Style::default().fg(Color::DarkGray)), inner);
         return;
     }
     if let Some((_, since)) = &app.preview_loading
