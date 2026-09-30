@@ -312,10 +312,8 @@ impl App {
                 self.initial_select = initial;
             }
         }
-        if !selecting_initial {
-            if let Some(saved) = self.dir_states.get(&resp.dir) {
-                self.file_cursor = (*saved).min(self.entries.len().saturating_sub(1));
-            }
+        if !selecting_initial && let Some(saved) = self.dir_states.get(&resp.dir) {
+            self.file_cursor = (*saved).min(self.entries.len().saturating_sub(1));
         }
         self.refresh_watcher();
         self.selection_changed();
@@ -335,12 +333,12 @@ impl App {
         let mut selected = self.entries.get(self.file_cursor).map(|entry| entry.name.clone());
         let mut focus_meta = false;
 
-        if let Some(name) = self.initial_select.as_ref() {
-            if resp.entries.iter().any(|entry| entry.name == *name) {
-                selected = Some(name.clone());
-                self.initial_select = None;
-                focus_meta = true;
-            }
+        if let Some(name) = self.initial_select.as_ref()
+            && resp.entries.iter().any(|entry| entry.name == *name)
+        {
+            selected = Some(name.clone());
+            self.initial_select = None;
+            focus_meta = true;
         }
 
         self.entries.extend(resp.entries);
