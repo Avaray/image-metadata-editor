@@ -28,11 +28,19 @@ fn render_top(app: &App, frame: &mut Frame, area: Rect) {
     let block = chrome_block();
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    let mut text = if app.dir.as_os_str().is_empty() { "Drives".to_string() } else { app.dir.display().to_string() };
+    let path_text = if app.dir.as_os_str().is_empty() { "Drives".to_string() } else { app.dir.display().to_string() };
     if app.watcher.is_some() {
-        text.push_str("  [watching]");
+        let watch_label = " [watching]";
+        let available = inner.width as usize;
+        let watch_len = watch_label.len();
+        let path_max = available.saturating_sub(watch_len);
+        let truncated = left_truncate(&path_text, path_max);
+        let padding = available.saturating_sub(truncated.len() + watch_len);
+        let line = Line::from(vec![Span::styled(truncated, Style::default().add_modifier(Modifier::BOLD)), Span::raw(" ".repeat(padding)), Span::styled(watch_label.trim(), Style::default().fg(Color::DarkGray))]);
+        frame.render_widget(Paragraph::new(line), inner);
+    } else {
+        frame.render_widget(Paragraph::new(path_text).style(Style::default().add_modifier(Modifier::BOLD)), inner);
     }
-    frame.render_widget(Paragraph::new(text).style(Style::default().add_modifier(Modifier::BOLD)), inner);
 }
 
 fn render_bottom(app: &App, frame: &mut Frame, area: Rect) {
