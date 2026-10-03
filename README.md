@@ -1,8 +1,8 @@
-# ime
+# 🧬 IME
 
-**ime** (Image Metadata Editor) is a fast, lightweight, and portable [CLI](https://en.wikipedia.org/wiki/Command-line_interface) written in [Rust](https://www.rust-lang.org/) for **reading**, **writing**, and **wiping** [metadata](https://en.wikipedia.org/wiki/Metadata) in `.png`, `.jpg`, and `.webp` files, with [JSON](https://en.wikipedia.org/wiki/JSON) input and output. It includes a built-in interactive terminal UI (TUI) for browsing and editing metadata visually.
+**IME** (Image Metadata Editor) is a fast, lightweight, and portable [CLI](https://en.wikipedia.org/wiki/Command-line_interface) written in [Rust](https://www.rust-lang.org/) for **reading**, **writing**, and **wiping** [metadata](https://en.wikipedia.org/wiki/Metadata) in `.png`, `.jpg`, and `.webp` files, with [JSON](https://en.wikipedia.org/wiki/JSON) input and output. It includes a built-in interactive terminal UI (TUI) for browsing and editing metadata visually.
 
-Pixel data is never touched: `ime` only edits metadata containers, so every operation preserves the image itself bit-for-bit.
+Zero loss in quality: `ime` edits only metadata and never touches your pixels.
 
 ## Installation
 
