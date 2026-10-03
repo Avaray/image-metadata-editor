@@ -10,7 +10,10 @@ Zero loss in quality: `ime` edits only metadata and never touches your pixels.
 
 Download a pre-built executable for your operating system from the [Releases](https://github.com/Avaray/image-metadata-editor/releases/latest) page.
 
-Currently supported platforms are **Linux** (x86_64, ARM64, and ARMv7), **macOS** (Intel and Apple Silicon), and **Windows** (x86_64).
+Currently supported platforms:
+- **Linux** (x86_64, ARM64, and ARMv7)
+- **macOS** (Intel and Apple Silicon)
+- **Windows** (x86_64)
 
 ### Using Cargo
 
