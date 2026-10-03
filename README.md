@@ -40,7 +40,7 @@ bunx @avaray/ime photo.jpg
 ```
 ime <file> [OPTIONS]         Read or modify a single file (use - for stdin)
 ime <dir> [--recursive]      Process every supported image in a directory
-ime [--tui] [<path>]         Open the interactive TUI (defaults to .)
+ime [--tui] [<path>]         Open the interactive TUI (defaults to current directory)
 ```
 
 | Flag | Short | Description |
