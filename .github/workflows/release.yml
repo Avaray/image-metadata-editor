@@ -1,4 +1,4 @@
-name: Release
+﻿name: Release
 
 on:
   push:
@@ -500,46 +500,32 @@ jobs:
         if: hashFiles('npm/ime-linux-x64/ime') != ''
         run: npm publish --provenance --access public
         working-directory: npm/ime-linux-x64
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish Linux ARM64 Package
         if: hashFiles('npm/ime-linux-arm64/ime') != ''
         run: npm publish --provenance --access public
         working-directory: npm/ime-linux-arm64
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish Linux ARMv7 Package
         if: hashFiles('npm/ime-linux-armv7/ime') != ''
         run: npm publish --provenance --access public
         working-directory: npm/ime-linux-armv7
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish macOS ARM64 Package
         if: hashFiles('npm/ime-macos-arm64/ime') != ''
         run: npm publish --provenance --access public
         working-directory: npm/ime-macos-arm64
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish macOS x64 Package
         if: hashFiles('npm/ime-macos-x64/ime') != ''
         run: npm publish --provenance --access public
         working-directory: npm/ime-macos-x64
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish Windows Package
         if: hashFiles('npm/ime-win32-x64/ime.exe') != ''
         run: npm publish --provenance --access public
         working-directory: npm/ime-win32-x64
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish Main Package
         run: npm publish --provenance --access public
         working-directory: npm/ime-cli
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
