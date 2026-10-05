@@ -455,8 +455,8 @@ impl App {
         }
     }
 
-    fn navigate_to(&mut self, dir: PathBuf) {
-        self.initial_select = None;
+    fn navigate_to(&mut self, dir: PathBuf, select: Option<String>) {
+        self.initial_select = select;
         self.dir_states.insert(self.dir.clone(), self.file_cursor);
         self.preview_path = None;
         self.tree = None;
@@ -562,7 +562,13 @@ impl App {
                 match target {
                     Some((true, false, path)) => {
                         if !self.check_unsaved() {
-                            self.navigate_to(path);
+                            self.navigate_to(path, None);
+                        }
+                    }
+                    Some((true, true, path)) => {
+                        if !self.check_unsaved() {
+                            let select = self.dir.file_name().map(|n| n.to_string_lossy().into_owned());
+                            self.navigate_to(path, select);
                         }
                     }
                     Some((false, _, _)) => self.focus = Focus::Meta,
@@ -577,7 +583,8 @@ impl App {
                     return;
                 }
                 if let Some(parent) = parent_dir(&self.dir) {
-                    self.navigate_to(parent);
+                    let select = self.dir.file_name().map(|n| n.to_string_lossy().into_owned());
+                    self.navigate_to(parent, select);
                 }
             }
             (KeyCode::Left, KeyModifiers::CONTROL) => {
@@ -588,11 +595,13 @@ impl App {
                     return;
                 }
                 let mut current = self.dir.clone();
+                let mut last_child = None;
                 while let Some(parent) = parent_dir(&current) {
+                    last_child = current.file_name().map(|n| n.to_string_lossy().into_owned());
                     current = parent;
                 }
                 if current != self.dir {
-                    self.navigate_to(current);
+                    self.navigate_to(current, last_child);
                 }
             }
             (KeyCode::Char('c'), KeyModifiers::NONE) => {
