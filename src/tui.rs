@@ -114,7 +114,7 @@ pub(crate) enum Overlay {
     NewKey { input: Input, error: Option<String> },
     NewValue { input: Input, key: Option<String>, error: Option<String> },
     Confirm { message: String, action: ConfirmAction, yes: bool },
-    About,
+    Help,
 }
 
 struct ScanResp {
@@ -488,7 +488,7 @@ impl App {
         }
         match key.code {
             KeyCode::F(1) => {
-                self.overlay = Some(Overlay::About);
+                self.overlay = Some(Overlay::Help);
                 return;
             }
             KeyCode::Tab => {
@@ -853,9 +853,9 @@ impl App {
         let overlay = self.overlay.take();
         match overlay {
             None => {}
-            Some(Overlay::About) => match key.code {
+            Some(Overlay::Help) => match key.code {
                 KeyCode::Esc | KeyCode::Enter | KeyCode::F(1) | KeyCode::Char('q') => {}
-                _ => self.overlay = Some(Overlay::About),
+                _ => self.overlay = Some(Overlay::Help),
             },
             Some(Overlay::Confirm { message, action, mut yes }) => match key.code {
                 KeyCode::Esc => {}

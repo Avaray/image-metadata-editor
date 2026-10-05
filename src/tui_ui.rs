@@ -71,7 +71,7 @@ fn legend_text(app: &App) -> &'static str {
             Overlay::NewKey { .. } | Overlay::NewValue { .. } => "[Enter] Confirm | [Esc] Cancel",
             Overlay::LeafEdit { .. } | Overlay::SubtreeEdit { .. } => "[Enter] Confirm | [Shift+Enter] Newline | [Esc] Cancel",
             Overlay::Confirm { .. } => "[Left/Right] Select | [Enter] Confirm | [Esc] Cancel",
-            Overlay::About => "[Esc] Close",
+            Overlay::Help => "[Esc] Close",
         };
     }
     match app.focus {
@@ -339,21 +339,57 @@ fn render_overlay(app: &mut App, frame: &mut Frame, area: Rect) {
             let no_style = if *yes { Style::default() } else { Style::default().add_modifier(Modifier::REVERSED) };
             frame.render_widget(Paragraph::new(Line::from(vec![Span::styled(" Yes ", yes_style), Span::raw("  "), Span::styled(" No ", no_style)])), Rect::new(inner.x, inner.y + 3, inner.width, 1));
         }
-        Some(Overlay::About) => {
-            let area = popup(area, 64, 11);
-            frame.render_widget(ratatui::widgets::Clear, area);
-            let block = Block::bordered().title("About");
-            let inner = block.inner(area);
-            frame.render_widget(block, area);
-            let lines = vec![
-                Line::from(vec![Span::styled(format!("ime {}", env!("CARGO_PKG_VERSION")), Style::default().add_modifier(Modifier::BOLD))]),
-                Line::raw(format!("Author: {}", env!("CARGO_PKG_AUTHORS"))),
-                Line::raw(format!("License: {}", env!("CARGO_PKG_LICENSE"))),
-                Line::raw(format!("Repository: {}", env!("CARGO_PKG_REPOSITORY"))),
-                Line::raw(format!("Rust: {}", env!("IME_RUSTC_VERSION"))),
-                Line::raw(format!("ratatui: {}", env!("IME_RATATUI_VERSION"))),
-            ];
-            frame.render_widget(Paragraph::new(lines), inner);
+        Some(Overlay::Help) => {
+            // Two columns of bindings + separator + 2 info lines + borders + padding
+            const FILES_BINDINGS: &[(&str, &str)] = &[("↑ / ↓", "Move cursor"), ("→ / Enter", "Open directory"), ("←", "Go up"), ("Ctrl+←", "Go to root"), ("Tab", "Switch to Metadata"), ("/", "Search"), ("c", "Copy name"), ("Ctrl+C", "Copy path"), ("r", "Rescan"), ("w", "Wipe metadata"), ("q", "Quit")];
+            const META_BINDINGS: &[(&str, &str)] = &[("↑ / ↓", "Move cursor"), ("→ / Enter", "Drill in / Edit"), ("←", "Back / Files panel"), ("Ctrl+←", "Back to root"), ("Tab", "Switch to Files"), ("/", "Search"), ("e", "Edit subtree JSON"), ("n", "New key / element"), ("d", "Delete node"), ("c", "Copy value"), ("Ctrl+C", "Copy path"), ("w", "Wipe metadata")];
+
+            let col_rows = FILES_BINDINGS.len().max(META_BINDINGS.len());
+            // Layout: border(1) + padding(1) + header(1) + sep(1) + bindings(col_rows)
+            //       + blank(1) + project_sep(1) + info(2) + blank(1) + padding(1) + border(1)
+            let height = (2 + 1 + 1 + col_rows + 1 + 1 + 2 + 1 + 2) as u16;
+            let popup_area = popup(area, 80, height);
+            frame.render_widget(ratatui::widgets::Clear, popup_area);
+            let block = Block::bordered().title(" Help ");
+            let inner = block.inner(popup_area);
+            frame.render_widget(block, popup_area);
+
+            if inner.width < 4 {
+                return;
+            }
+
+            // Split inner into left and right key-binding columns
+            let half = inner.width / 2;
+            let col_left = Rect::new(inner.x, inner.y, half, inner.height);
+            let col_right = Rect::new(inner.x + half, inner.y, inner.width - half, inner.height);
+
+            let dim = Style::default().fg(Color::DarkGray);
+            let bold = Style::default().add_modifier(Modifier::BOLD);
+            let accent = Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD);
+
+            // Helper: render one column of bindings
+            let render_col = |frame: &mut Frame, col: Rect, title: &str, bindings: &[(&str, &str)]| {
+                let key_w = bindings.iter().map(|(k, _)| k.len()).max().unwrap_or(0);
+                let mut lines = vec![Line::from(vec![Span::styled(title, accent)])];
+                lines.push(Line::styled("─".repeat(col.width.saturating_sub(1) as usize), dim));
+                for (key, desc) in bindings {
+                    let padding = " ".repeat(key_w.saturating_sub(key.len()));
+                    lines.push(Line::from(vec![Span::styled(format!("{key}{padding}"), bold), Span::styled("  ", dim), Span::styled(*desc, Style::default())]));
+                }
+                frame.render_widget(Paragraph::new(lines), col);
+            };
+
+            render_col(frame, col_left, "Files", FILES_BINDINGS);
+            render_col(frame, col_right, "Metadata", META_BINDINGS);
+
+            // Project info below the columns
+            let info_y = inner.y + 2 + col_rows as u16 + 1;
+            if info_y + 3 <= inner.y + inner.height {
+                let sep = "─".repeat(inner.width as usize);
+                frame.render_widget(Paragraph::new(Line::styled(sep, dim)), Rect::new(inner.x, info_y, inner.width, 1));
+                let info_lines = vec![Line::from(vec![Span::styled(format!("ime {}", env!("CARGO_PKG_VERSION")), bold), Span::styled(format!("  ·  {}  ·  {}", env!("CARGO_PKG_AUTHORS"), env!("CARGO_PKG_LICENSE")), dim)]), Line::styled(env!("CARGO_PKG_REPOSITORY"), dim)];
+                frame.render_widget(Paragraph::new(info_lines), Rect::new(inner.x, info_y + 1, inner.width, 2));
+            }
         }
     }
 }
