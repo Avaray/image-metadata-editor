@@ -76,7 +76,7 @@ fn legend_text(app: &App) -> &'static str {
     }
     match app.focus {
         Focus::Files => "[←/→/↑/↓/] Navigate | [F1] Help | [q] Quit",
-        Focus::Meta => "[←/→/↑/↓/] Navigate | [Enter] Open/Edit | [e] Edit | [d] Delete | [/] Search | [w] Wipe | [F1] About | [q] Quit",
+        Focus::Meta => "[←/→/↑/↓/] Navigate | [Enter] Open/Edit | [e] Edit | [d] Delete | [/] Search | [w] Wipe | [F1] Help | [q] Quit",
     }
 }
 
