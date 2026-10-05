@@ -4,6 +4,8 @@
 
 Zero loss in quality: `ime` edits only metadata and never touches your pixels.
 
+![IME TUI](.github/screenshots/screenshot_01.jpg)
+
 ## Installation
 
 ### Pre-built binaries
