@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+﻿use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -340,8 +340,8 @@ fn render_overlay(app: &mut App, frame: &mut Frame, area: Rect) {
             frame.render_widget(Paragraph::new(Line::from(vec![Span::styled(" Yes ", yes_style), Span::raw("  "), Span::styled(" No ", no_style)])), Rect::new(inner.x, inner.y + 3, inner.width, 1));
         }
         Some(Overlay::Help) => {
-            const FILES_BINDINGS: &[(&str, &str)] = &[("Up / Down", "Move cursor"), ("Right / Enter", "Open directory"), ("Left", "Go up"), ("Ctrl+Left", "Go to root"), ("Tab", "Switch to Metadata"), ("/", "Search"), ("c", "Copy name"), ("Ctrl+C", "Copy path"), ("r", "Rescan"), ("w", "Wipe metadata"), ("q", "Quit")];
-            const META_BINDINGS: &[(&str, &str)] = &[("Up / Down", "Move cursor"), ("Right / Enter", "Drill in / Edit"), ("Left", "Back / Files panel"), ("Ctrl+Left", "Back to root"), ("Tab", "Switch to Files"), ("/", "Search"), ("e", "Edit subtree JSON"), ("n", "New key / element"), ("d", "Delete node"), ("c", "Copy value"), ("Ctrl+C", "Copy path"), ("w", "Wipe metadata")];
+            const FILES_BINDINGS: &[(&str, &str)] = &[("↑ / ↓", "Move cursor"), ("→ / Enter", "Open directory"), ("←", "Go up"), ("Ctrl+←", "Go to root"), ("Tab", "Switch to Metadata"), ("/", "Search"), ("c", "Copy name"), ("Ctrl+C", "Copy path"), ("r", "Rescan"), ("w", "Wipe metadata"), ("q", "Quit")];
+            const META_BINDINGS: &[(&str, &str)] = &[("↑ / ↓", "Move cursor"), ("→ / Enter", "Drill in / Edit"), ("←", "Back / Files panel"), ("Ctrl+←", "Back to root"), ("Tab", "Switch to Files"), ("/", "Search"), ("e", "Edit subtree JSON"), ("n", "New key / element"), ("d", "Delete node"), ("c", "Copy value"), ("Ctrl+C", "Copy path"), ("w", "Wipe metadata")];
 
             let col_rows = FILES_BINDINGS.len().max(META_BINDINGS.len());
             // border(2) + h-padding(2) + header(1) + sep(1) + rows + blank(1) + sep(1) + info(3)
