@@ -1,7 +1,7 @@
 [package]
 authors = ["Dawid Wasowski <contact@dav.one>"]
 categories = ["command-line-utilities", "development-tools", "filesystem", "multimedia::images", "parsing"]
-description = "A fast, lightweight CLI for reading, writing, and wiping metadata from image files."
+description = "A fast, lightweight CLI for reading, writing, and wiping image metadata, with JSON input and output."
 edition = "2024"
 homepage = "https://dav.one/image-metadata-editor/"
 keywords = ["cli", "metadata", "exif", "image", "tool"]
