@@ -188,7 +188,7 @@ Only **PNG**, **JPEG**, and **WebP** are supported. Formats are detected by magi
 
 ### Changelog
 
-All notable changes to this project will be documented in the [CHANGELOG.md](CHANGELOG.md) file.
+All notable changes to this project will be documented in the [CHANGELOG.md](https://github.com/Avaray/image-metadata-editor/blob/HEAD/CHANGELOG.md) file.
 
 ### License
 
