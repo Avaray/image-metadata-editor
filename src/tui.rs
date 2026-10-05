@@ -1,4 +1,4 @@
-﻿use std::collections::HashMap;
+use std::collections::HashMap;
 use std::io::IsTerminal as _;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
@@ -62,10 +62,28 @@ pub fn run(initial: &Path, power: bool, watch: bool, expand: bool) -> Result<(),
 }
 
 fn absolutize(path: &Path) -> PathBuf {
-    if path.is_absolute() {
-        return path.to_path_buf();
+    let base = if path.is_absolute() { path.to_path_buf() } else { std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")).join(path) };
+    normalize_drive(base)
+}
+
+/// On Windows, drive letters from the shell can be lowercase (e.g. `c:\`),
+/// but the in-app drive list always uses uppercase.  Normalize the first byte
+/// of the path string so that `PathBuf::starts_with` comparisons are reliable.
+#[cfg(windows)]
+fn normalize_drive(path: PathBuf) -> PathBuf {
+    let s = path.to_string_lossy();
+    if s.len() >= 2 && s.as_bytes()[1] == b':' && s.as_bytes()[0].is_ascii_lowercase() {
+        let mut chars = s.chars();
+        let upper = chars.next().unwrap().to_ascii_uppercase();
+        PathBuf::from(format!("{upper}{}", chars.as_str()))
+    } else {
+        path
     }
-    std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")).join(path)
+}
+
+#[cfg(not(windows))]
+fn normalize_drive(path: PathBuf) -> PathBuf {
+    path
 }
 
 fn event_loop(app: &mut App, terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> Result<(), Error> {
@@ -462,6 +480,7 @@ impl App {
     }
 
     fn navigate_to(&mut self, dir: PathBuf, mut select: Option<String>) {
+        let dir = normalize_drive(dir);
         let mut keep_jump_back = false;
         if let Some(target) = &self.jump_back_file {
             if dir.as_os_str().is_empty() || target.starts_with(&dir) {
