@@ -247,7 +247,7 @@ pub fn traverse_value(value: &mut Value) {
 fn traverse(value: &mut Value) {
     match value {
         Value::String(text) => {
-            if let Ok(parsed) = serde_json::from_str::<Value>(text)
+            if let Ok(parsed) = serde_json::from_str::<Value>(text).or_else(|_| json5::from_str::<Value>(text))
                 && (parsed.is_object() || parsed.is_array())
             {
                 *value = parsed;
