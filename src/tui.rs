@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+﻿use std::collections::HashMap;
 use std::io::IsTerminal as _;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
@@ -461,7 +461,30 @@ impl App {
         }
     }
 
-    fn navigate_to(&mut self, dir: PathBuf, select: Option<String>) {
+    fn navigate_to(&mut self, dir: PathBuf, mut select: Option<String>) {
+        let mut keep_jump_back = false;
+        if let Some(target) = &self.jump_back_file {
+            if dir.as_os_str().is_empty() || target.starts_with(&dir) {
+                keep_jump_back = true;
+                if select.is_none() && target != &dir {
+                    if dir.as_os_str().is_empty() {
+                        if let Some(c) = target.components().next() {
+                            let mut s = c.as_os_str().to_string_lossy().into_owned();
+                            if !s.ends_with('\\') && cfg!(windows) {
+                                s.push('\\');
+                            }
+                            select = Some(s);
+                        }
+                    } else if let Ok(suffix) = target.strip_prefix(&dir) {
+                        select = suffix.components().next().map(|c| c.as_os_str().to_string_lossy().into_owned());
+                    }
+                }
+            }
+        }
+        if !keep_jump_back {
+            self.jump_back_file = None;
+        }
+
         self.initial_select = select;
         self.dir_states.insert(self.dir.clone(), self.file_cursor);
         self.preview_path = None;
@@ -470,7 +493,6 @@ impl App {
         self.preview_loading = None;
         self.preview_pending = None;
         self.restore_drill = None;
-        self.jump_back_file = None;
         self.jump_back_meta = None;
         self.request_scan(dir, true);
     }
@@ -603,15 +625,14 @@ impl App {
                     return;
                 }
                 let mut current = self.dir.clone();
-                let mut last_child = None;
                 while let Some(parent) = parent_dir(&current) {
-                    last_child = current.file_name().map(|n| n.to_string_lossy().into_owned());
                     current = parent;
                 }
                 if current != self.dir {
-                    let origin = self.dir.clone();
-                    self.navigate_to(current, last_child);
-                    self.jump_back_file = Some(origin);
+                    if self.jump_back_file.as_ref().is_none_or(|t| !t.starts_with(&self.dir)) {
+                        self.jump_back_file = Some(self.dir.clone());
+                    }
+                    self.navigate_to(current, None);
                 }
             }
             (KeyCode::Right, KeyModifiers::CONTROL) => {
@@ -676,9 +697,22 @@ impl App {
                 }
             }
             (KeyCode::Right, KeyModifiers::NONE) => {
-                self.jump_back_meta = None;
                 if let Some(tree) = self.tree.as_mut() {
                     tree.drill_into_selected();
+                    let mut keep = false;
+                    if let Some(target) = &self.jump_back_meta {
+                        if target.starts_with(tree.drill()) {
+                            keep = true;
+                            if let Some(next_segment) = target.get(tree.drill().len()) {
+                                if let Some(idx) = tree.rows(false).iter().position(|r| &r.segment == next_segment) {
+                                    tree.set_cursor(idx);
+                                }
+                            }
+                        }
+                    }
+                    if !keep {
+                        self.jump_back_meta = None;
+                    }
                 }
             }
             (KeyCode::Left, KeyModifiers::NONE) => {
@@ -689,14 +723,24 @@ impl App {
                     }
                     self.focus = Focus::Files;
                 } else if let Some(tree) = self.tree.as_mut() {
-                    self.jump_back_meta = None;
                     tree.drill_up();
+                    let mut keep = false;
+                    if let Some(target) = &self.jump_back_meta {
+                        if target.starts_with(tree.drill()) {
+                            keep = true;
+                        }
+                    }
+                    if !keep {
+                        self.jump_back_meta = None;
+                    }
                 }
             }
             (KeyCode::Left, KeyModifiers::CONTROL) => {
                 if let Some(tree) = self.tree.as_mut() {
                     if !tree.drill().is_empty() {
-                        self.jump_back_meta = Some(tree.drill().to_vec());
+                        if self.jump_back_meta.as_ref().is_none_or(|t| !t.starts_with(tree.drill())) {
+                            self.jump_back_meta = Some(tree.drill().to_vec());
+                        }
                         while tree.drill_up() {}
                     }
                 }
@@ -712,9 +756,22 @@ impl App {
                 let selected = self.tree.as_ref().and_then(|tree| tree.selected());
                 match selected {
                     Some((_, row)) if row.is_branch => {
-                        self.jump_back_meta = None;
                         if let Some(tree) = self.tree.as_mut() {
                             tree.drill_into_selected();
+                            let mut keep = false;
+                            if let Some(target) = &self.jump_back_meta {
+                                if target.starts_with(tree.drill()) {
+                                    keep = true;
+                                    if let Some(next_segment) = target.get(tree.drill().len()) {
+                                        if let Some(idx) = tree.rows(false).iter().position(|r| &r.segment == next_segment) {
+                                            tree.set_cursor(idx);
+                                        }
+                                    }
+                                }
+                            }
+                            if !keep {
+                                self.jump_back_meta = None;
+                            }
                         }
                     }
                     Some((path, _)) => self.open_leaf_editor(path),
