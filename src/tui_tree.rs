@@ -60,7 +60,7 @@ impl MetaTree {
 
     /// Move the cursor, wrapping around at the ends.
     pub fn move_cursor(&mut self, delta: isize) {
-        let rows = self.rows().len();
+        let rows = self.rows(false).len();
         if rows == 0 {
             self.cursor = 0;
             return;
@@ -70,7 +70,7 @@ impl MetaTree {
 
     /// Move the cursor by a page, clamping at the ends (no wrap).
     pub fn move_cursor_clamped(&mut self, delta: isize) {
-        let rows = self.rows().len();
+        let rows = self.rows(false).len();
         if rows == 0 {
             self.cursor = 0;
             return;
@@ -79,7 +79,7 @@ impl MetaTree {
     }
 
     pub fn set_cursor(&mut self, index: usize) {
-        self.cursor = index.min(self.rows().len().saturating_sub(1));
+        self.cursor = index.min(self.rows(false).len().saturating_sub(1));
     }
 
     /// The display node at the current drill level (the root when the drill
@@ -90,7 +90,7 @@ impl MetaTree {
 
     /// The children of the current node; object keys are sorted so the order
     /// never depends on encoder output order.
-    pub fn rows(&self) -> Vec<Row> {
+    pub fn rows(&self, expand: bool) -> Vec<Row> {
         match self.current_node() {
             Value::Object(map) => {
                 let mut keys: Vec<&String> = map.keys().collect();
@@ -98,18 +98,18 @@ impl MetaTree {
                 keys.into_iter()
                     .map(|key| {
                         let value = &map[key];
-                        Row { label: key.clone(), segment: Segment::Key(key.clone()), is_branch: value.is_object() || value.is_array(), preview: preview(value) }
+                        Row { label: key.clone(), segment: Segment::Key(key.clone()), is_branch: value.is_object() || value.is_array(), preview: preview(value, expand) }
                     })
                     .collect()
             }
-            Value::Array(items) => items.iter().enumerate().map(|(index, value)| Row { label: format!("[{index}]"), segment: Segment::Index(index), is_branch: value.is_object() || value.is_array(), preview: preview(value) }).collect(),
+            Value::Array(items) => items.iter().enumerate().map(|(index, value)| Row { label: format!("[{index}]"), segment: Segment::Index(index), is_branch: value.is_object() || value.is_array(), preview: preview(value, expand) }).collect(),
             _ => Vec::new(),
         }
     }
 
     /// The full display path and row of the current cursor position, if any.
     pub fn selected(&self) -> Option<(Vec<Segment>, Row)> {
-        let rows = self.rows();
+        let rows = self.rows(false);
         let row = rows.into_iter().nth(self.cursor)?;
         let mut path = self.drill.clone();
         path.push(row.segment.clone());
@@ -203,7 +203,7 @@ impl MetaTree {
         // Fill history with zeros up to the new depth if we jumped
         self.cursor_history.clear();
         self.cursor_history.resize(parent.len(), 0);
-        self.cursor = self.rows().iter().position(|row| &row.segment == last).unwrap_or(0);
+        self.cursor = self.rows(false).iter().position(|row| &row.segment == last).unwrap_or(0);
     }
 
     /// Build a `--set` payload (`{"exif"|"custom": ...}`) performing `edit` at
@@ -260,8 +260,32 @@ fn walk<'a>(node: &'a Value, path: &[Segment]) -> Option<&'a Value> {
     Some(node)
 }
 
-fn preview(value: &Value) -> String {
+fn preview(value: &Value, expand: bool) -> String {
     match value {
+        Value::Object(map) if expand => {
+            if map.is_empty() {
+                return "{}".to_string();
+            }
+            let mut keys: Vec<&String> = map.keys().collect();
+            keys.sort();
+            let joined = keys.iter().map(|k| k.as_str()).collect::<Vec<_>>().join(", ");
+            truncate(&format!("{{{joined}}}"), 120)
+        }
+        Value::Array(items) if expand => {
+            if items.is_empty() {
+                return "[]".to_string();
+            }
+            let previews: Vec<String> = items
+                .iter()
+                .map(|item| match item {
+                    Value::String(s) => truncate(s, 30),
+                    Value::Object(m) => format!("{{{}}}", m.len()),
+                    Value::Array(a) => format!("[{}]", a.len()),
+                    _ => serde_json::to_string(item).unwrap_or_default(),
+                })
+                .collect();
+            truncate(&format!("[{}]", previews.join(", ")), 120)
+        }
         Value::Object(map) => format!("{{{}}}", map.len()),
         Value::Array(items) => format!("[{}]", items.len()),
         Value::String(text) => truncate(text, 120),

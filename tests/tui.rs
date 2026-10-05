@@ -52,5 +52,5 @@ fn tui_without_tty_fails_cleanly() {
 
 #[test]
 fn help_mentions_tui_flags() {
-    run_ime().arg("--help").assert().success().stdout(predicate::str::contains("--tui")).stdout(predicate::str::contains("--power")).stdout(predicate::str::contains("--watch"));
+    run_ime().arg("--help").assert().success().stdout(predicate::str::contains("--tui")).stdout(predicate::str::contains("--power")).stdout(predicate::str::contains("--watch")).stdout(predicate::str::contains("--expand"));
 }

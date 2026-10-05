@@ -20,7 +20,7 @@ use crate::tui_ui;
 /// Open the interactive TUI for `initial` (a directory, or a file whose
 /// parent is shown with the file selected). Fails cleanly when the path is
 /// unusable or there is no terminal to run on.
-pub fn run(initial: &Path, power: bool, watch: bool) -> Result<(), Error> {
+pub fn run(initial: &Path, power: bool, watch: bool, expand: bool) -> Result<(), Error> {
     let kind = std::fs::metadata(initial).map_err(|err| Error::runtime(format!("cannot open '{}': {err}", initial.display())))?;
     let absolute = absolutize(initial);
     let (dir, select) = if kind.is_dir() {
@@ -52,7 +52,7 @@ pub fn run(initial: &Path, power: bool, watch: bool) -> Result<(), Error> {
     }));
 
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout)).map_err(|err| Error::runtime(format!("cannot start TUI: {err}")))?;
-    let mut app = App::new(dir, select, power, watch);
+    let mut app = App::new(dir, select, power, watch, expand);
     let result = event_loop(&mut app, &mut terminal);
 
     let _ = terminal::disable_raw_mode();
@@ -164,6 +164,7 @@ pub(crate) struct App {
     pub status: Option<String>,
     pub status_time: Option<Instant>,
     pub power: bool,
+    pub expand: bool,
     pub watch_requested: bool,
     pub watcher: Option<WatchState>,
     pub watch_dirty: Option<Instant>,
@@ -175,7 +176,7 @@ pub(crate) struct App {
 }
 
 impl App {
-    fn new(dir: PathBuf, select: Option<String>, power: bool, watch: bool) -> Self {
+    fn new(dir: PathBuf, select: Option<String>, power: bool, watch: bool, expand: bool) -> Self {
         let (scan_tx, scan_rx) = mpsc::channel();
         let (meta_tx, meta_rx) = mpsc::channel();
         let mut app = Self {
@@ -204,6 +205,7 @@ impl App {
             status: None,
             status_time: None,
             power,
+            expand,
             watch_requested: watch,
             watcher: None,
             watch_dirty: None,
@@ -1357,7 +1359,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("a.png");
         std::fs::copy("tests/fixtures/photo.png", &path).unwrap();
-        let mut app = App::new(dir.path().to_path_buf(), None, false, false);
+        let mut app = App::new(dir.path().to_path_buf(), None, false, false, false);
         app.pending_dir = None;
         app.entries = vec![FileEntry { name: "a.png".to_string(), path, is_dir: false, is_parent: false }];
 

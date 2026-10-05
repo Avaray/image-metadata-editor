@@ -75,8 +75,8 @@ fn legend_text(app: &App) -> &'static str {
         };
     }
     match app.focus {
-        Focus::Files => "[Up/Down] Move | [PgUp/PgDn] Page | [Right] Open | [Left] Up | [Tab] Metadata | [/] Search | [c] Copy name | [Ctrl+C] Copy path | [r] Rescan | [w] Wipe | [F1] About | [q] Quit",
-        Focus::Meta => "[Up/Down] Move | [PgUp/PgDn] Page | [Right] Drill | [Left] Back | [Enter] Open/Edit | [e] Edit JSON | [n] New | [d] Delete | [c] Copy value | [Ctrl+C] Copy path | [Tab] Files | [/] Search | [w] Wipe | [F1] About | [q] Quit",
+        Focus::Files => "[↑/↓] Move | [→] Open | [←] Up | [Tab] Metadata | [/] Search | [c] Copy name | [Ctrl+C] Copy path | [r] Rescan | [w] Wipe | [F1] About | [q] Quit",
+        Focus::Meta => "[↑/↓] Move | [→] Drill | [←] Back | [Tab] Files | [Enter] Open/Edit | [e] Edit | [d] Delete | [c] Copy value | [Ctrl+C] Copy path | [/] Search | [w] Wipe | [F1] About | [q] Quit",
     }
 }
 
@@ -193,7 +193,7 @@ fn render_meta(app: &mut App, frame: &mut Frame, area: Rect) {
     let Some(tree) = &app.tree else {
         return;
     };
-    let rows = tree.rows();
+    let rows = tree.rows(app.expand);
     if rows.is_empty() {
         frame.render_widget(Paragraph::new("(no metadata)").style(Style::default().fg(Color::DarkGray)), inner);
         return;
