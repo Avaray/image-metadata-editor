@@ -163,6 +163,8 @@ pub(crate) struct App {
     pub overlay: Option<Overlay>,
     pub status: Option<String>,
     pub status_time: Option<Instant>,
+    pub jump_back_file: Option<PathBuf>,
+    pub jump_back_meta: Option<Vec<crate::tui_tree::Segment>>,
     pub power: bool,
     pub expand: bool,
     pub watch_requested: bool,
@@ -204,6 +206,8 @@ impl App {
             overlay: None,
             status: None,
             status_time: None,
+            jump_back_file: None,
+            jump_back_meta: None,
             power,
             expand,
             watch_requested: watch,
@@ -466,6 +470,8 @@ impl App {
         self.preview_loading = None;
         self.preview_pending = None;
         self.restore_drill = None;
+        self.jump_back_file = None;
+        self.jump_back_meta = None;
         self.request_scan(dir, true);
     }
 
@@ -603,7 +609,20 @@ impl App {
                     current = parent;
                 }
                 if current != self.dir {
+                    let origin = self.dir.clone();
                     self.navigate_to(current, last_child);
+                    self.jump_back_file = Some(origin);
+                }
+            }
+            (KeyCode::Right, KeyModifiers::CONTROL) => {
+                if self.check_unsaved() {
+                    return;
+                }
+                if self.pending_dir.is_some() {
+                    return;
+                }
+                if let Some(target) = self.jump_back_file.take() {
+                    self.navigate_to(target, None);
                 }
             }
             (KeyCode::Char('c'), KeyModifiers::NONE) => {
@@ -657,6 +676,7 @@ impl App {
                 }
             }
             (KeyCode::Right, KeyModifiers::NONE) => {
+                self.jump_back_meta = None;
                 if let Some(tree) = self.tree.as_mut() {
                     tree.drill_into_selected();
                 }
@@ -669,18 +689,30 @@ impl App {
                     }
                     self.focus = Focus::Files;
                 } else if let Some(tree) = self.tree.as_mut() {
+                    self.jump_back_meta = None;
                     tree.drill_up();
                 }
             }
             (KeyCode::Left, KeyModifiers::CONTROL) => {
                 if let Some(tree) = self.tree.as_mut() {
-                    while tree.drill_up() {}
+                    if !tree.drill().is_empty() {
+                        self.jump_back_meta = Some(tree.drill().to_vec());
+                        while tree.drill_up() {}
+                    }
+                }
+            }
+            (KeyCode::Right, KeyModifiers::CONTROL) => {
+                if let Some(target) = self.jump_back_meta.take() {
+                    if let Some(tree) = self.tree.as_mut() {
+                        tree.jump_to(&target);
+                    }
                 }
             }
             (KeyCode::Enter, KeyModifiers::NONE) => {
                 let selected = self.tree.as_ref().and_then(|tree| tree.selected());
                 match selected {
                     Some((_, row)) if row.is_branch => {
+                        self.jump_back_meta = None;
                         if let Some(tree) = self.tree.as_mut() {
                             tree.drill_into_selected();
                         }
