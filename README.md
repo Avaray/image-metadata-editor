@@ -1,4 +1,4 @@
-# 🧬 IME
+﻿# 🧬 IME
 
 **IME** (Image Metadata Editor) is a fast, lightweight, and portable [CLI](https://en.wikipedia.org/wiki/Command-line_interface) written in [Rust](https://www.rust-lang.org/) for **reading**, **writing**, and **wiping** [metadata](https://en.wikipedia.org/wiki/Metadata) in `.png`, `.jpg`, and `.webp` files, with [JSON](https://en.wikipedia.org/wiki/JSON) input and output. It includes a built-in interactive terminal UI (TUI) for browsing and editing metadata visually.
 
@@ -53,6 +53,7 @@ ime [--tui] [<path>]         Open the interactive TUI (defaults to current direc
 | `--tui` | `-t` | Open the interactive terminal UI for the given path |
 | `--power` | `-p` | TUI power mode: skip confirmations and auto-save on quit |
 | `--watch` | | TUI-only: live-refresh the file list as files change |
+| `--expand` | `-x` | TUI-only: show inline branch previews in the metadata panel |
 | `--version` | `-v` | Print the semver version number and exit |
 | `--help` | `-h` | Print help and exit |
 
@@ -155,6 +156,7 @@ ime photo.jpg -t     # open with a file pre-selected
 | Keys | Action |
 |------|--------|
 | `Up`/`Down`, `Left`/`Right` | Navigate the file tree / drill through metadata |
+| `Ctrl+Left`/`Ctrl+Right` | Jump to root / Jump back to deep path |
 | `Tab` | Switch between the file and metadata panels |
 | `Enter`, `e` | Edit a value / edit a subtree as JSON |
 | `n` | New entry in the current branch |
@@ -163,7 +165,8 @@ ime photo.jpg -t     # open with a file pre-selected
 | `/` | Search the focused panel |
 | `c`, `Ctrl+C` | Copy a value / copy a path |
 | `r` | Re-scan the current directory |
-| `F1` | About overlay |
+| `Ctrl+S` | Commit in-memory edits to disk |
+| `F1` | Help overlay (keybindings & project info) |
 | `q` | Quit |
 
 ### Supported formats
