@@ -75,8 +75,8 @@ fn legend_text(app: &App) -> &'static str {
         };
     }
     match app.focus {
-        Focus::Files => "[↑/↓] Move | [→] Open | [←] Up | [Tab] Metadata | [/] Search | [c] Copy name | [Ctrl+C] Copy path | [r] Rescan | [w] Wipe | [F1] About | [q] Quit",
-        Focus::Meta => "[↑/↓] Move | [→] Drill | [←] Back | [Tab] Files | [Enter] Open/Edit | [e] Edit | [d] Delete | [c] Copy value | [Ctrl+C] Copy path | [/] Search | [w] Wipe | [F1] About | [q] Quit",
+        Focus::Files => "[←/→/↑/↓/] Navigate | [F1] Help | [q] Quit",
+        Focus::Meta => "[←/→/↑/↓/] Navigate | [Enter] Open/Edit | [e] Edit | [d] Delete | [/] Search | [w] Wipe | [F1] About | [q] Quit",
     }
 }
 
